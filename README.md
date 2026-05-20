@@ -35,8 +35,9 @@ flask --app "app:create_app" run        # http://localhost:5000/health
 curl -X POST http://localhost:5000/analyze \
   -H 'Content-Type: application/json' --data-binary @schedule.json
 ```
-`POST /analyze` validates a JSON `Schedule`, runs the CPM engine and DCMA Metrics 1-4, and
-returns the critical path, project finish (working days), and per-metric results.
+`POST /analyze` validates a JSON `Schedule`, runs the CPM engine and the DCMA metrics, and returns
+per-task timings (ES/EF/LS/LF/slack), the critical path, project finish (working days), and
+per-metric results.
 
 ## Security note
 Schedule files (`*.mpp`, `*.xer`, `*.xml`) may carry Controlled Unclassified Information

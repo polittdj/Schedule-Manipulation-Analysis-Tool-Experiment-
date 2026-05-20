@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from app.cpm import compute_cpm
+from app.cpm import TaskTiming, compute_cpm
 from app.cpm.calendar_math import minutes_to_working_days
 from app.exceptions import MetricError
 from app.metrics import (
@@ -42,15 +42,32 @@ class AnalysisReport:
     project_finish_minutes: int
     project_finish_working_days: float
     critical_path: tuple[int, ...]
+    timings: tuple[TaskTiming, ...]
+    minutes_per_working_day: int
     metrics: tuple[MetricResult, ...]
     skipped_metrics: tuple[SkippedMetric, ...]
 
     def to_dict(self) -> dict[str, Any]:
+        critical = set(self.critical_path)
         return {
             "project_start": self.project_start.isoformat(),
             "project_finish_minutes": self.project_finish_minutes,
             "project_finish_working_days": self.project_finish_working_days,
             "critical_path": list(self.critical_path),
+            "tasks": [
+                {
+                    "unique_id": t.unique_id,
+                    "early_start_minutes": t.early_start,
+                    "early_finish_minutes": t.early_finish,
+                    "late_start_minutes": t.late_start,
+                    "late_finish_minutes": t.late_finish,
+                    "total_slack_minutes": t.total_slack,
+                    "free_slack_minutes": t.free_slack,
+                    "total_slack_working_days": t.total_slack / self.minutes_per_working_day,
+                    "is_critical": t.unique_id in critical,
+                }
+                for t in self.timings
+            ],
             "metrics": [
                 {
                     "metric_id": metric.metric_id,
@@ -112,6 +129,8 @@ def analyze_schedule(schedule: Schedule) -> AnalysisReport:
             cpm.project_finish, presentation_calendar
         ),
         critical_path=cpm.critical_path,
+        timings=cpm.timings,
+        minutes_per_working_day=presentation_calendar.hours_per_day * 60,
         metrics=tuple(metrics),
         skipped_metrics=tuple(skipped),
     )

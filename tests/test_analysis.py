@@ -31,6 +31,16 @@ def test_analyze_schedule_composes_cpm_and_metrics() -> None:
     assert by_id[7].severity == Severity.PASS  # all critical, no float
 
 
+def test_report_includes_per_task_timings() -> None:
+    report = analyze_schedule(_chain(3))
+    assert len(report.timings) == 3
+    tasks = {t["unique_id"]: t for t in report.to_dict()["tasks"]}
+    assert tasks[1]["early_start_minutes"] == 0
+    assert tasks[3]["early_finish_minutes"] == 3 * DAY
+    assert tasks[1]["total_slack_working_days"] == 0.0
+    assert all(t["is_critical"] for t in tasks.values())  # pure chain -> all critical
+
+
 def test_analyze_endpoint_returns_report() -> None:
     schedule = _chain(2)
     client = create_app({"TESTING": True}).test_client()
