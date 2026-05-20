@@ -15,6 +15,9 @@ Each metric is a pure function `run_<name>(schedule, options) -> MetricResult`. 
 | 6 | High Float | tasks with total float > 44 working days / all tasks | `<= 5%` | the high-float tasks | total float (working days) |
 | 7 | Negative Float | tasks with total float < 0 / all tasks | `0%` (any negative fails) | the negative-float tasks | total float (working days) |
 | 8 | High Duration | tasks with duration > 44 working days / all tasks | `<= 5%` | the long tasks | duration (working days) |
+| 9 | Invalid Dates | tasks with actuals after the data date or inconsistent progress / all tasks | `0%` | the offending tasks | flag (1.0) |
+| 10 | Resources | detail tasks (duration > 0) missing a resource / detail tasks | `<= 5%` | the unresourced tasks | flag (1.0) |
+| 11 | Missed Tasks | tasks due by the data date that finished late/not at all / tasks due | `<= 5%` | the missed tasks | flag (1.0) |
 
 Notes:
 - Metric 4 is an AT_LEAST metric: the numerator counts the *good* (FS) relations while the
@@ -32,7 +35,9 @@ Notes:
 - **Metric 7 (Negative Float)** is driven by task **deadlines** / hard constraints (which cap the
   late finish without rescheduling, so a miss yields negative total float). Offender ``value`` =
   total float in working days.
-- **Coverage:** Metrics 1-8 are implemented. The rest need data the model does not yet carry and
-  are deferred (see `FIDELITY-DECISION-dcma-coverage.md`): 9 (Invalid Dates), 11 (Missed Tasks),
-  13 (BEI) need actual/baseline dates; 10 (Resources), 12 (CPLI/critical-path test), 14 need
-  resources or a baseline.
+- **Metrics 9/10/11** read the tracking data (status date, actual dates, baseline finishes,
+  resources) added to the model. They raise `MetricError` when the required data is absent (e.g.
+  no `status_date`), so the `/analyze` report lists them as *skipped* rather than fabricating a PASS.
+  Metric 9's complementary "forecast remaining work before the data date" sub-check is deferred —
+  it needs data-date (progress) scheduling in the CPM engine.
+- **Coverage:** Metrics 1-11 are implemented; 12 (Critical Path Test), 13 (CPLI), 14 (BEI) follow.

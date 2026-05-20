@@ -18,11 +18,14 @@ from app.metrics import (
     run_hard_constraints,
     run_high_duration,
     run_high_float,
+    run_invalid_dates,
     run_lags,
     run_leads,
+    run_missed_tasks,
     run_missing_logic,
     run_negative_float,
     run_relationship_types,
+    run_resources,
 )
 from app.metrics.base import MetricResult
 from app.models import Schedule
@@ -122,6 +125,9 @@ def analyze_schedule(schedule: Schedule) -> AnalysisReport:
     run(6, lambda: run_high_float(schedule, cpm))
     run(7, lambda: run_negative_float(schedule, cpm))
     run(8, lambda: run_high_duration(schedule))
+    run(9, lambda: run_invalid_dates(schedule))
+    run(10, lambda: run_resources(schedule))
+    run(11, lambda: run_missed_tasks(schedule))
 
     presentation_calendar = schedule.calendars[0]
     return AnalysisReport(

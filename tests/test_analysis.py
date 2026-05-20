@@ -11,7 +11,11 @@ DAY = 480
 
 
 def _chain(n: int) -> object:
-    tasks = tuple(make_task(i, duration_minutes=DAY) for i in range(1, n + 1))
+    # Tasks carry a resource so Metric 10 passes; no status_date/baseline, so progress
+    # metrics 9 and 11 are (correctly) skipped.
+    tasks = tuple(
+        make_task(i, duration_minutes=DAY, resource_names=("crew",)) for i in range(1, n + 1)
+    )
     relations = tuple(make_relation(i, i + 1) for i in range(1, n))
     return make_schedule(tasks=tasks, relations=relations)
 
@@ -21,14 +25,15 @@ def test_analyze_schedule_composes_cpm_and_metrics() -> None:
     assert report.project_finish_minutes == 3 * DAY
     assert report.project_finish_working_days == 3.0
     assert report.critical_path == (1, 2, 3)
-    assert {m.metric_id for m in report.metrics} == {1, 2, 3, 4, 5, 6, 7, 8}
-    assert report.skipped_metrics == ()
+    assert {m.metric_id for m in report.metrics} == {1, 2, 3, 4, 5, 6, 7, 8, 10}
+    assert {s.metric_id for s in report.skipped_metrics} == {9, 11}  # need status/baseline data
     by_id = {m.metric_id: m for m in report.metrics}
     assert by_id[4].severity == Severity.PASS  # 100% FS
     assert by_id[2].severity == Severity.PASS  # no leads
     assert by_id[3].severity == Severity.PASS  # no lags
     assert by_id[6].severity == Severity.PASS  # short tasks
     assert by_id[7].severity == Severity.PASS  # all critical, no float
+    assert by_id[10].severity == Severity.PASS  # every task has a resource
 
 
 def test_report_includes_per_task_timings() -> None:
@@ -49,7 +54,7 @@ def test_analyze_endpoint_returns_report() -> None:
     body = resp.get_json()
     assert body["project_finish_working_days"] == 2.0
     assert body["critical_path"] == [1, 2]
-    assert {m["metric_id"] for m in body["metrics"]} == {1, 2, 3, 4, 5, 6, 7, 8}
+    assert {m["metric_id"] for m in body["metrics"]} == {1, 2, 3, 4, 5, 6, 7, 8, 10}
 
 
 def test_analyze_endpoint_rejects_invalid_schedule() -> None:
@@ -69,12 +74,12 @@ def test_analyze_endpoint_cyclic_schedule_returns_422() -> None:
 
 
 def test_analyze_skips_unrunnable_metrics_without_fabricating() -> None:
-    # one task, no relations: task-based metrics (1, 6, 7) run; relation-based 2/3/4 are
-    # skipped (not faked PASS).
+    # one task, no relations / no progress data: relation-based 2/3/4 and progress 9/11 are
+    # skipped (not faked PASS); the rest run.
     schedule = make_schedule(tasks=(make_task(1, duration_minutes=DAY),), relations=())
     report = analyze_schedule(schedule)
-    assert {m.metric_id for m in report.metrics} == {1, 5, 6, 7, 8}
-    assert {s.metric_id for s in report.skipped_metrics} == {2, 3, 4}
+    assert {m.metric_id for m in report.metrics} == {1, 5, 6, 7, 8, 10}
+    assert {s.metric_id for s in report.skipped_metrics} == {2, 3, 4, 9, 11}
 
 
 def test_analyze_flags_non_fs_relation() -> None:
