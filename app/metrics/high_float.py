@@ -20,7 +20,7 @@ _THRESHOLD = ThresholdConfig(
     value=5.0,
     direction=Direction.AT_MOST,
     source=(
-        "DCMA 14-Point Schedule Assessment, Metric 7 (High Float): "
+        "DCMA 14-Point Schedule Assessment, Metric 6 (High Float): "
         "<= 5% of tasks with total float > 44 working days"
     ),
 )
@@ -48,7 +48,7 @@ def run_high_float(
     denominator = len(tasks)
     severity = evaluate_severity(100.0 * numerator / denominator, _THRESHOLD)
     return MetricResult(
-        metric_id=7,
+        metric_id=6,
         metric_name="High Float (> 44 working days)",
         severity=severity,
         threshold=_THRESHOLD,

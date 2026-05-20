@@ -22,7 +22,7 @@ def test_negative_float_flagged_when_deadline_missed() -> None:
     )
     schedule = make_schedule(tasks=tasks, relations=(make_relation(1, 2),))
     result = run_negative_float(schedule, compute_cpm(schedule))
-    assert result.metric_id == 8
+    assert result.metric_id == 7
     assert (result.numerator, result.denominator) == (2, 2)
     assert {o.unique_id for o in result.offenders} == {1, 2}
     assert result.offenders[0].value == -3.0  # working days

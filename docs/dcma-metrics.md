@@ -12,9 +12,9 @@ Each metric is a pure function `run_<name>(schedule, options) -> MetricResult`. 
 | 3 | Lags (Positive Lag) | relations with `lag > 0` / all relations | `<= 5%` | the lagged relations | lag minutes (positive) |
 | 4 | Relationship Types | FS relations / all relations | `>= 90%` | the **non-FS** relations | predecessor UniqueID |
 | 5 | Hard Constraints | tasks with a hard constraint (MSO/MFO/SNLT/FNLT) / all tasks | `<= 5%` | the hard-constrained tasks | flag (1.0) |
-| 6 | High Duration | tasks with duration > 44 working days / all tasks | `<= 5%` | the long tasks | duration (working days) |
-| 7 | High Float | tasks with total float > 44 working days / all tasks | `<= 5%` | the high-float tasks | total float (working days) |
-| 8 | Negative Float | tasks with total float < 0 / all tasks | `0%` (any negative fails) | the negative-float tasks | total float (working days) |
+| 6 | High Float | tasks with total float > 44 working days / all tasks | `<= 5%` | the high-float tasks | total float (working days) |
+| 7 | Negative Float | tasks with total float < 0 / all tasks | `0%` (any negative fails) | the negative-float tasks | total float (working days) |
+| 8 | High Duration | tasks with duration > 44 working days / all tasks | `<= 5%` | the long tasks | duration (working days) |
 
 Notes:
 - Metric 4 is an AT_LEAST metric: the numerator counts the *good* (FS) relations while the
@@ -26,11 +26,12 @@ Notes:
 - Thresholds are the canonical DCMA 14-Point Assessment values; citations are by assessment name
   because the primary sources were unavailable this session (see
   `FIDELITY-COMPROMISE-dcma-citations.md`).
-- **Metrics 6/7** convert minutes to working days per each task's own calendar; the "44 working
-  days" bar is the canonical DCMA threshold. Metric 6 uses the single modelled duration as the
-  baseline duration. Metric 7 consumes the CPM total float.
-- **Metric 8** uses task **deadlines** (a deadline caps the late finish without rescheduling, so a
-  missed deadline yields negative total float). Offender ``value`` = total float in working days.
+- **Metrics 6/8** convert minutes to working days per each task's own calendar; the "44 working
+  days" bar is the canonical DCMA threshold. Metric 6 (High Float) consumes the CPM total float;
+  Metric 8 (High Duration) uses the single modelled duration as the baseline duration.
+- **Metric 7 (Negative Float)** is driven by task **deadlines** / hard constraints (which cap the
+  late finish without rescheduling, so a miss yields negative total float). Offender ``value`` =
+  total float in working days.
 - **Coverage:** Metrics 1-8 are implemented. The rest need data the model does not yet carry and
   are deferred (see `FIDELITY-DECISION-dcma-coverage.md`): 9 (Invalid Dates), 11 (Missed Tasks),
   13 (BEI) need actual/baseline dates; 10 (Resources), 12 (CPLI/critical-path test), 14 need

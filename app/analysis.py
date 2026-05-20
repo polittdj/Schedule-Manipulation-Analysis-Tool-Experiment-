@@ -119,9 +119,9 @@ def analyze_schedule(schedule: Schedule) -> AnalysisReport:
     run(3, lambda: run_lags(schedule))
     run(4, lambda: run_relationship_types(schedule))
     run(5, lambda: run_hard_constraints(schedule))
-    run(6, lambda: run_high_duration(schedule))
-    run(7, lambda: run_high_float(schedule, cpm))
-    run(8, lambda: run_negative_float(schedule, cpm))
+    run(6, lambda: run_high_float(schedule, cpm))
+    run(7, lambda: run_negative_float(schedule, cpm))
+    run(8, lambda: run_high_duration(schedule))
 
     presentation_calendar = schedule.calendars[0]
     return AnalysisReport(

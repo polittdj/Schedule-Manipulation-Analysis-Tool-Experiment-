@@ -18,7 +18,7 @@ _THRESHOLD = ThresholdConfig(
     value=0.0,
     direction=Direction.AT_MOST,
     source=(
-        "DCMA 14-Point Schedule Assessment, Metric 8 (Negative Float): "
+        "DCMA 14-Point Schedule Assessment, Metric 7 (Negative Float): "
         "0% — no task may carry negative total float"
     ),
 )
@@ -46,7 +46,7 @@ def run_negative_float(
     denominator = len(tasks)
     severity = evaluate_severity(100.0 * numerator / denominator, _THRESHOLD)
     return MetricResult(
-        metric_id=8,
+        metric_id=7,
         metric_name="Negative Float (< 0)",
         severity=severity,
         threshold=_THRESHOLD,

@@ -23,7 +23,7 @@ def test_high_duration_flags_tasks_over_44_days() -> None:
         make_task(3, duration_minutes=10 * DAY),
     )
     result = run_high_duration(make_schedule(tasks=tasks, relations=()))
-    assert result.metric_id == 6
+    assert result.metric_id == 8
     assert (result.numerator, result.denominator) == (1, 3)
     assert result.offenders[0].unique_id == 1
     assert result.offenders[0].value == 45.0
@@ -52,7 +52,7 @@ def test_high_float_flags_float_over_44_days() -> None:
     relations = (make_relation(1, 3), make_relation(2, 3))
     schedule = make_schedule(tasks=tasks, relations=relations)
     result = run_high_float(schedule, compute_cpm(schedule))
-    assert result.metric_id == 7
+    assert result.metric_id == 6
     assert (result.numerator, result.denominator) == (1, 3)
     assert result.offenders[0].unique_id == 1
     assert result.offenders[0].value == 49.0
