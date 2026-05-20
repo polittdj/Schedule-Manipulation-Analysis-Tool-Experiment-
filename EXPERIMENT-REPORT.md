@@ -22,12 +22,15 @@ _(PR # + merge commit SHA recorded as they merge.)_
 - **M3 — Parser stub** — PR #3, squash-merged to `main` as **`fbf1fe8`**. `parse_mpp` stub raises
   `NotImplementedError` (win32com/COM message); `parse_schedule` dispatcher resolves the seam at call
   time (monkeypatchable); contract doc. CI green in 20s; 3 new tests (18 total).
+- **M4 — CPM engine** — PR #4, squash-merged to `main` as **`80d6a3c`**. Working-minute offset axis;
+  FS/SS/FF/SF forward+backward passes; total/free slack; critical path; deterministic Kahn topo sort
+  (cycle→`CPMError`); calendar math (weekend/holiday skip). CI green in 18s; 10 new tests (28 total).
 
 ## 3. Milestones in progress
-- **M4 — CPM engine:** starting on branch `m4-cpm-engine` off `main`.
+- **M5 — DCMA metrics 1–4:** starting on branch `m5-dcma-metrics` off `main`.
 
 ## 4. Milestones not started
-- M5 — DCMA metrics 1–4.
+- _(none — M1–M5 all reached.)_
 
 ## 5. STUCK files index
 - `STUCK-build-plan-unavailable.md` — reference BUILD-PLAN.md + DCMA source docs not present in the sandbox; proceeding from embedded milestone summaries.
@@ -37,8 +40,9 @@ _(PR # + merge commit SHA recorded as they merge.)_
 _(Logged tradeoffs, ~10 lines each.)_
 - `FIDELITY-DECISION-data-model.md` (M2) — sorted-tuples-not-sets (round-trip stability); naive
   datetimes (tz out of scope); calendars-by-FK not nested; strict+frozen+extra-forbid rationale.
-- Anticipated (M4/M5): durations/lags as working-time minutes; single-calendar CPM offset axis;
-  binary PASS/FAIL severity (WARN not emitted without a cited second threshold).
+- `FIDELITY-DECISION-cpm-engine.md` (M4) — working-minute offset axis; working-time durations/lags;
+  single-calendar offset axis; ASAP/no-constraints; tuple-not-list critical_path; free-slack non-clamp.
+- Anticipated (M5): binary PASS/FAIL severity (WARN not emitted without a cited second threshold).
 
 ## 7. FIDELITY-COMPROMISE files index
 _(Every deliberate shortcut, however minor. Honesty is the data.)_
