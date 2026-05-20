@@ -1,0 +1,26 @@
+[project]
+name = "schedule-manipulation-analysis-tool"
+version = "0.1.0"
+description = "Forensic schedule-analysis tool: DCMA-14 quality metrics and CPM analysis."
+requires-python = ">=3.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "C4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["app"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
