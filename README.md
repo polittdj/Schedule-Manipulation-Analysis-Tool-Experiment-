@@ -30,7 +30,13 @@ ruff check . && ruff format --check . && mypy app/ && pytest -q
 ## Running
 ```sh
 flask --app "app:create_app" run        # http://localhost:5000/health
+
+# Analyze a schedule (JSON Schedule body in -> CPM + DCMA metrics report out):
+curl -X POST http://localhost:5000/analyze \
+  -H 'Content-Type: application/json' --data-binary @schedule.json
 ```
+`POST /analyze` validates a JSON `Schedule`, runs the CPM engine and DCMA Metrics 1-4, and
+returns the critical path, project finish (working days), and per-metric results.
 
 ## Security note
 Schedule files (`*.mpp`, `*.xer`, `*.xml`) may carry Controlled Unclassified Information
