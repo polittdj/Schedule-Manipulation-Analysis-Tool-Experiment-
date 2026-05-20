@@ -19,12 +19,14 @@ _(PR # + merge commit SHA recorded as they merge.)_
 - **M2 — Pydantic data model** — PR #2, squash-merged to `main` as **`1f98960`**. Frozen/strict/
   extra-forbid `Calendar`/`Task`/`Relation`/`Schedule`; sorted-tuple collections; referential-integrity
   validator; UniqueID identity; byte-equal JSON round-trip. CI green in 20s; 12 new tests (15 total).
+- **M3 — Parser stub** — PR #3, squash-merged to `main` as **`fbf1fe8`**. `parse_mpp` stub raises
+  `NotImplementedError` (win32com/COM message); `parse_schedule` dispatcher resolves the seam at call
+  time (monkeypatchable); contract doc. CI green in 20s; 3 new tests (18 total).
 
 ## 3. Milestones in progress
-- **M3 — Parser stub:** starting on branch `m3-parser-stub` off `main`.
+- **M4 — CPM engine:** starting on branch `m4-cpm-engine` off `main`.
 
 ## 4. Milestones not started
-- M4 — CPM engine.
 - M5 — DCMA metrics 1–4.
 
 ## 5. STUCK files index
