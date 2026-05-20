@@ -1,23 +1,33 @@
-# FIDELITY-DECISION — which DCMA metrics are implemented vs. deferred
+# FIDELITY-DECISION — DCMA metric coverage (all 14) and its simplifications
 
-DCMA's full assessment has 14 points. This build implements the ones that are computable from
-the current data model + CPM output without inventing data:
+**All 14 DCMA 14-Point metrics are implemented**, each as a pure function with known-answer tests:
+1 Logic, 2 Leads, 3 Lags, 4 Relationship Types, 5 Hard Constraints, 6 High Float, 7 Negative
+Float, 8 High Duration, 9 Invalid Dates, 10 Resources, 11 Missed Tasks, 12 Critical Path Test,
+13 CPLI, 14 BEI.
 
-**Implemented:** 1 (Logic), 2 (Leads), 3 (Lags), 4 (Relationship Types), 5 (Hard Constraints),
-6 (High Duration), 7 (High Float), 8 (Negative Float) — DCMA Metrics 1-8. Metrics 6/7/8 reuse the
-model + CPM output (working-day conversions). Metric 8 became implementable with **task deadlines**,
-and Metric 5 with **date-constraint support** in the CPM engine (now that constraints are modelled
-and faithfully scheduled, counting the hard ones is exact and testable).
+The model grew to support them (status date, actual start/finish, baseline finishes, percent
+complete, resources; project baseline finish), and the CPM engine grew date constraints + deadlines.
+Metrics that need data which a given schedule lacks **raise `MetricError`**, so `/analyze` reports
+them as *skipped* rather than fabricating a result.
 
-**Deferred — each needs model fields I have not added, so building them now would mean fabricating
-inputs or shipping a check that can't be exercised:**
-- **9 Invalid Dates, 11 Missed Tasks, 13 Baseline Execution Index** — require actual/forecast and
-  baseline dates, which the model does not carry.
-- **10 Resources, 12 Critical Path Test / CPLI, 14 (program-specific)** — require resource
-  assignments and/or a baseline.
+## Documented simplifications (faithful where it counts; honest where it's reduced)
 
-Decision rationale: the experiment forbids shipping code I know is wrong or half-finished. A
-metric whose failure path cannot be produced or whose inputs don't exist would be exactly that.
-Implementing 5, 6, 7, and 8 (fully testable, real inputs) and explicitly deferring the rest is the
-faithful, honest scope. The same by-name citation caveat as Metrics 1-4 applies
-(`FIDELITY-COMPROMISE-dcma-citations.md`).
+1. **No progress / data-date (re)scheduling.** The CPM forecasts every task from `project_start`
+   using pure logic; it does not reschedule remaining work to start at the data date, nor consume
+   recorded actuals to compute remaining duration. Consequences:
+   - **Metric 9 (Invalid Dates)** implements the unambiguous checks — actual dates after the data
+     date, and progress/actual-date inconsistencies — but **omits** the "forecast remaining work
+     scheduled before the data date" sub-check, which requires data-date scheduling.
+   - Forecast dates used by CPLI (13) come from the logic forward pass, not from a status-aware
+     reschedule. For an un-progressed (or freshly-statused) schedule this matches; for a
+     mid-execution schedule a real tool would reschedule remaining work first.
+
+2. **Metric 10 (Resources) threshold.** DCMA references vary on this one (often informational);
+   implemented as "≤ 5% of detail tasks missing a resource," a defensible reading. Citation
+   caveat per `FIDELITY-COMPROMISE-dcma-citations.md` applies.
+
+3. **`ALAP` constraints** are rejected by the CPM (`CPMError`) rather than mis-scheduled — see
+   `FIDELITY-DECISION-cpm-engine.md`.
+
+These are the honest edges of a faithful 14-metric implementation; closing #1 (a status-aware
+progress-scheduling pass) is the main remaining fidelity upgrade.

@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 from app.metrics.base import MetricOptions, MetricResult, Offender, ThresholdConfig
+from app.metrics.bei import run_bei
+from app.metrics.cpli import run_cpli
+from app.metrics.critical_path_test import run_critical_path_test
 from app.metrics.duration import run_high_duration
 from app.metrics.hard_constraints import run_hard_constraints
 from app.metrics.high_float import run_high_float
@@ -21,6 +24,9 @@ __all__ = [
     "MetricResult",
     "Offender",
     "ThresholdConfig",
+    "run_bei",
+    "run_cpli",
+    "run_critical_path_test",
     "run_hard_constraints",
     "run_high_duration",
     "run_high_float",

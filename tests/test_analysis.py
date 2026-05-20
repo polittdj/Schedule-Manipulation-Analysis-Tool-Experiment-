@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from app import create_app
 from app.analysis import analyze_schedule
 from app.models import RelationType, Severity
@@ -25,8 +27,9 @@ def test_analyze_schedule_composes_cpm_and_metrics() -> None:
     assert report.project_finish_minutes == 3 * DAY
     assert report.project_finish_working_days == 3.0
     assert report.critical_path == (1, 2, 3)
-    assert {m.metric_id for m in report.metrics} == {1, 2, 3, 4, 5, 6, 7, 8, 10}
-    assert {s.metric_id for s in report.skipped_metrics} == {9, 11}  # need status/baseline data
+    assert {m.metric_id for m in report.metrics} == {1, 2, 3, 4, 5, 6, 7, 8, 10, 12}
+    # 9/11/13/14 need status-date / baseline data this schedule lacks.
+    assert {s.metric_id for s in report.skipped_metrics} == {9, 11, 13, 14}
     by_id = {m.metric_id: m for m in report.metrics}
     assert by_id[4].severity == Severity.PASS  # 100% FS
     assert by_id[2].severity == Severity.PASS  # no leads
@@ -54,7 +57,7 @@ def test_analyze_endpoint_returns_report() -> None:
     body = resp.get_json()
     assert body["project_finish_working_days"] == 2.0
     assert body["critical_path"] == [1, 2]
-    assert {m["metric_id"] for m in body["metrics"]} == {1, 2, 3, 4, 5, 6, 7, 8, 10}
+    assert {m["metric_id"] for m in body["metrics"]} == {1, 2, 3, 4, 5, 6, 7, 8, 10, 12}
 
 
 def test_analyze_endpoint_rejects_invalid_schedule() -> None:
@@ -78,8 +81,54 @@ def test_analyze_skips_unrunnable_metrics_without_fabricating() -> None:
     # skipped (not faked PASS); the rest run.
     schedule = make_schedule(tasks=(make_task(1, duration_minutes=DAY),), relations=())
     report = analyze_schedule(schedule)
-    assert {m.metric_id for m in report.metrics} == {1, 5, 6, 7, 8, 10}
-    assert {s.metric_id for s in report.skipped_metrics} == {2, 3, 4, 9, 11}
+    assert {m.metric_id for m in report.metrics} == {1, 5, 6, 7, 8, 10, 12}
+    assert {s.metric_id for s in report.skipped_metrics} == {2, 3, 4, 9, 11, 13, 14}
+
+
+def _fully_tracked_schedule() -> object:
+    # A 3-task FS chain (durations 2/5/3 days) with resources, progress, baselines and a data
+    # date 3 working days in, so every one of the 14 metrics has the data it needs to run.
+    tasks = (
+        make_task(
+            1,
+            duration_minutes=2 * DAY,
+            resource_names=("crew",),
+            percent_complete=100,
+            actual_start=datetime(2026, 1, 5, 8, 0),
+            actual_finish=datetime(2026, 1, 6, 16, 0),  # on its baseline
+            baseline_finish=datetime(2026, 1, 6, 16, 0),  # due (<= data date)
+        ),
+        make_task(
+            2,
+            duration_minutes=5 * DAY,
+            resource_names=("crew",),
+            baseline_finish=datetime(2026, 1, 16, 16, 0),
+        ),
+        make_task(
+            3,
+            duration_minutes=3 * DAY,
+            resource_names=("crew",),
+            baseline_finish=datetime(2026, 1, 22, 16, 0),
+        ),
+    )
+    relations = (make_relation(1, 2), make_relation(2, 3))
+    return make_schedule(
+        tasks=tasks,
+        relations=relations,
+        status_date=datetime(2026, 1, 8, 8, 0),  # 3 working days in
+        baseline_finish=datetime(2026, 1, 16, 16, 0),  # == forecast finish (10 working days)
+    )
+
+
+def test_all_fourteen_metrics_run_end_to_end() -> None:
+    report = analyze_schedule(_fully_tracked_schedule())
+    assert {m.metric_id for m in report.metrics} == set(range(1, 15))
+    assert report.skipped_metrics == ()  # every metric had the data it needed
+    by_id = {m.metric_id: m for m in report.metrics}
+    assert by_id[13].measured == 1.0  # CPLI: baseline == forecast
+    assert by_id[13].severity == Severity.PASS
+    assert by_id[14].severity == Severity.PASS  # the one due task completed on time
+    assert by_id[12].severity == Severity.PASS  # delay propagates through the chain
 
 
 def test_analyze_flags_non_fs_relation() -> None:

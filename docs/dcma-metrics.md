@@ -18,6 +18,9 @@ Each metric is a pure function `run_<name>(schedule, options) -> MetricResult`. 
 | 9 | Invalid Dates | tasks with actuals after the data date or inconsistent progress / all tasks | `0%` | the offending tasks | flag (1.0) |
 | 10 | Resources | detail tasks (duration > 0) missing a resource / detail tasks | `<= 5%` | the unresourced tasks | flag (1.0) |
 | 11 | Missed Tasks | tasks due by the data date that finished late/not at all / tasks due | `<= 5%` | the missed tasks | flag (1.0) |
+| 12 | Critical Path Test | a ~600-day delay on a critical task must move the finish by the same amount | `<= 0%` broken | the tested task if it fails | finish shortfall (minutes) |
+| 13 | CPLI | (baseline finish − data date) / (forecast finish − data date) — an index in `measured` | `>= 0.95` | — | index (in `measured`) |
+| 14 | BEI | tasks completed / tasks baselined to finish by the data date | `>= 95%` | the due-but-unfinished tasks | flag (1.0) |
 
 Notes:
 - Metric 4 is an AT_LEAST metric: the numerator counts the *good* (FS) relations while the
@@ -40,4 +43,10 @@ Notes:
   no `status_date`), so the `/analyze` report lists them as *skipped* rather than fabricating a PASS.
   Metric 9's complementary "forecast remaining work before the data date" sub-check is deferred —
   it needs data-date (progress) scheduling in the CPM engine.
-- **Coverage:** Metrics 1-11 are implemented; 12 (Critical Path Test), 13 (CPLI), 14 (BEI) follow.
+- **Metrics 12/13/14:** Metric 12 re-runs the CPM with an injected delay (no new data needed).
+  Metric 13 (CPLI) reports an index via `MetricResult.measured` and needs the project
+  `baseline_finish` + `status_date`. Metric 14 (BEI) needs per-task `baseline_finish` + `status_date`.
+- **Coverage:** **all 14 DCMA metrics are implemented.** Simplifications, documented in
+  `FIDELITY-DECISION-dcma-coverage.md`: the CPM forecasts from project start (no progress/data-date
+  rescheduling), so Metric 9's "forecast remaining work before the data date" sub-check is omitted,
+  and forecast dates ignore recorded actuals.

@@ -15,6 +15,9 @@ from app.cpm import TaskTiming, compute_cpm
 from app.cpm.calendar_math import minutes_to_working_days
 from app.exceptions import MetricError
 from app.metrics import (
+    run_bei,
+    run_cpli,
+    run_critical_path_test,
     run_hard_constraints,
     run_high_duration,
     run_high_float,
@@ -85,6 +88,7 @@ class AnalysisReport:
                     "numerator": metric.numerator,
                     "denominator": metric.denominator,
                     "percentage": metric.percentage,
+                    "measured": metric.measured,
                     "offenders": [
                         {"unique_id": o.unique_id, "name": o.name, "value": o.value}
                         for o in metric.offenders
@@ -128,6 +132,9 @@ def analyze_schedule(schedule: Schedule) -> AnalysisReport:
     run(9, lambda: run_invalid_dates(schedule))
     run(10, lambda: run_resources(schedule))
     run(11, lambda: run_missed_tasks(schedule))
+    run(12, lambda: run_critical_path_test(schedule, cpm))
+    run(13, lambda: run_cpli(schedule, cpm))
+    run(14, lambda: run_bei(schedule))
 
     presentation_calendar = schedule.calendars[0]
     return AnalysisReport(
