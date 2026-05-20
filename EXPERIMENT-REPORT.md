@@ -4,6 +4,8 @@
 > output. Updated at least every ~20 min of work and at every PR merge.
 
 ## 1. Session start
+- **STATUS: M1–M5 ALL COMPLETE & MERGED TO `main`.** 5 PRs (#1–#5), all CI-green, squash-merged.
+  40 tests passing; ruff + ruff-format + mypy(strict on `app/`) clean. `main` head: `f35de79`.
 - **Session start commit (SHA at start):** `506b3d9` ("Initial commit", README only).
 - **Date:** 2026-05-20.
 - **Branch model:** per-milestone feature branches → PR → `main` (see §5 STUCK-branch-strategy).
@@ -25,12 +27,16 @@ _(PR # + merge commit SHA recorded as they merge.)_
 - **M4 — CPM engine** — PR #4, squash-merged to `main` as **`80d6a3c`**. Working-minute offset axis;
   FS/SS/FF/SF forward+backward passes; total/free slack; critical path; deterministic Kahn topo sort
   (cycle→`CPMError`); calendar math (weekend/holiday skip). CI green in 18s; 10 new tests (28 total).
+- **M5 — DCMA metrics 1–4** — PR #5, squash-merged to `main` as **`f35de79`**. Pure functions →
+  frozen `MetricResult`; `ThresholdConfig` with cited source; binary PASS/FAIL (no WARN without a
+  cited second threshold); `MetricError` on empty denominator. M1 ≤5%, M2 0% leads, M3 ≤5% lags,
+  M4 ≥90% FS. CI green in 22s; 12 new tests (40 total).
 
 ## 3. Milestones in progress
-- **M5 — DCMA metrics 1–4:** starting on branch `m5-dcma-metrics` off `main`.
+- _(none — all five milestones merged.)_
 
 ## 4. Milestones not started
-- _(none — M1–M5 all reached.)_
+- _(none — M1–M5 all complete.)_
 
 ## 5. STUCK files index
 - `STUCK-build-plan-unavailable.md` — reference BUILD-PLAN.md + DCMA source docs not present in the sandbox; proceeding from embedded milestone summaries.
@@ -42,11 +48,14 @@ _(Logged tradeoffs, ~10 lines each.)_
   datetimes (tz out of scope); calendars-by-FK not nested; strict+frozen+extra-forbid rationale.
 - `FIDELITY-DECISION-cpm-engine.md` (M4) — working-minute offset axis; working-time durations/lags;
   single-calendar offset axis; ASAP/no-constraints; tuple-not-list critical_path; free-slack non-clamp.
-- Anticipated (M5): binary PASS/FAIL severity (WARN not emitted without a cited second threshold).
+- `FIDELITY-DECISION-dcma-severity.md` (M5) — DCMA metrics are binary PASS/FAIL; WARN not emitted
+  without a cited second threshold; un-runnable metrics raise rather than fabricate; no "ERROR" state.
 
 ## 7. FIDELITY-COMPROMISE files index
 _(Every deliberate shortcut, however minor. Honesty is the data.)_
-- Anticipated: DCMA threshold citations not page-verified against primary sources (Edwards 2016 / RonWinter 2011 / DECM 8.0) because those PDFs/XLSX were unavailable this session. Will be logged when M5 lands.
+- `FIDELITY-COMPROMISE-dcma-citations.md` (M5) — DCMA threshold citations not page-verified against
+  primary sources (Edwards 2016 / RonWinter 2011 / DECM 8.0 / NASA-NID) because those PDFs/XLSX were
+  unavailable this session. Threshold *values* are canonical; *wording*/page-anchors are unverified.
 
 ## 8. Tools / dependencies introduced (rationale)
 - **Python 3.13 venv** — M1 target runtime (default `python3` is 3.11; 3.13 at `/usr/bin/python3.13`).
@@ -63,12 +72,26 @@ _(Every deliberate shortcut, however minor. Honesty is the data.)_
 - Is the byte-equal round-trip meant to be `model_dump_json` self-stability, or equality against a canonical fixture? (Implementing self-stability.)
 
 ## 10. Most useful thing I wrote this session
-- _TBD._
+- The **CPM engine on an integer working-minute offset axis** (`app/cpm/engine.py`) plus its
+  hand-worked known-answer tests. Choosing offsets (not wall-clock datetimes) as the internal
+  axis made the arithmetic exact, killed the end-of-day/start-of-next-day boundary class of bugs
+  by construction, and made every value hand-verifiable. Writing the worked examples is also how I
+  caught an arithmetic slip in my own plan (Example 1's branch task carries **1** working day of
+  slack, not 2) — the test encodes the correct value. This is the load-bearing fidelity component
+  and the part most likely to be reused/extended.
 
 ## 11. Least useful / most regret
-- _TBD._
+- **`app/cpm/calendar_math.py` is partly speculative.** The CPM core is pure offset arithmetic and
+  never calls `add_working_minutes` / `working_minutes_between`; only `minutes_to_working_days` is
+  on a real path. I built and tested the wall-clock walk for fidelity/future presentation, but for
+  M1–M5 it is infrastructure ahead of a consumer. Also a smaller smell: `Offender.value` is a single
+  float overloaded to mean different things per metric (missing-end count / lag minutes / predecessor
+  id); a per-metric offender type would be cleaner than documenting the overload.
 
 ## 12. Where I would go next
-- _TBD as the build progresses._ Immediate next step after the scaffolded milestones:
-  real parser adapters behind the M3 seam, MS Project constraint handling + negative float
-  in the CPM engine, and DCMA metrics 5–14.
+- **Wire it together in Flask:** an upload→`parse_schedule`→`compute_cpm`+metrics→JSON-report route,
+  so the 500 MB guard and the analysis core meet. **Harden CPM fidelity:** MS Project constraints
+  (SNET/MSO/deadlines), negative float, and multi-calendar lag arithmetic (currently single-calendar).
+  **Real parsers** behind the M3 seam (`.xer`/`.xml` first — pure-Python, unlike `.mpp`). **Finish
+  DCMA:** metrics 5–14, then manipulation-scoring with the "always-100" regression guard. **Citations:**
+  swap the by-name DCMA citations for page-anchored ones once the primary PDFs/XLSX are available.
