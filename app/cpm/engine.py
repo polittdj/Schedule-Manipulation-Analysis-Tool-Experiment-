@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import heapq
 from collections.abc import Iterable
+from datetime import datetime
 
+from app.cpm.calendar_math import working_minutes_between
 from app.cpm.result import CPMResult, TaskTiming
 from app.exceptions import CPMError
-from app.models import Relation, RelationType, Schedule
+from app.models import Calendar, Relation, RelationType, Schedule
 
 
 def _topological_order(task_ids: Iterable[int], relations: tuple[Relation, ...]) -> list[int]:
@@ -56,6 +58,16 @@ def compute_cpm(schedule: Schedule) -> CPMResult:
         incoming[relation.successor_id].append(relation)
 
     order = _topological_order(duration.keys(), schedule.relations)
+
+    # Deadlines (if any) as working-minute offsets, used to cap late finishes below.
+    calendars = {c.calendar_id: c for c in schedule.calendars}
+    deadline_offsets: dict[int, int] = {
+        task.unique_id: _deadline_offset(
+            calendars[task.calendar_id], schedule.project_start, task.deadline
+        )
+        for task in schedule.tasks
+        if task.deadline is not None
+    }
 
     # Forward pass: earliest start/finish.
     es: dict[int, int] = {}
@@ -99,6 +111,8 @@ def compute_cpm(schedule: Schedule) -> CPMResult:
                 else:  # SF
                     candidates.append(lf[succ] - lag + duration[uid])
             latest = min(candidates)
+        if uid in deadline_offsets:
+            latest = min(latest, deadline_offsets[uid])
         lf[uid] = latest
         ls[uid] = latest - duration[uid]
 
@@ -119,7 +133,7 @@ def compute_cpm(schedule: Schedule) -> CPMResult:
                 free_slack=free_slack,
             )
         )
-        if total_slack == 0:
+        if total_slack <= 0:  # <= 0 (not == 0) so negative-float tasks are critical too
             critical_path.append(uid)
 
     return CPMResult(
@@ -154,3 +168,10 @@ def _free_slack(
         else:  # SF
             gaps.append(ef[succ] - (es[uid] + lag))
     return min(gaps)
+
+
+def _deadline_offset(calendar: Calendar, project_start: datetime, deadline: datetime) -> int:
+    """A finish deadline as a working-minute offset from project start (0 if at/before start)."""
+    if deadline <= project_start:
+        return 0
+    return working_minutes_between(calendar, project_start, deadline)

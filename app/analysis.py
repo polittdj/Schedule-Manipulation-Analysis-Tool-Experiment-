@@ -20,6 +20,7 @@ from app.metrics import (
     run_lags,
     run_leads,
     run_missing_logic,
+    run_negative_float,
     run_relationship_types,
 )
 from app.metrics.base import MetricResult
@@ -101,6 +102,7 @@ def analyze_schedule(schedule: Schedule) -> AnalysisReport:
     run(4, lambda: run_relationship_types(schedule))
     run(6, lambda: run_high_duration(schedule))
     run(7, lambda: run_high_float(schedule, cpm))
+    run(8, lambda: run_negative_float(schedule, cpm))
 
     presentation_calendar = schedule.calendars[0]
     return AnalysisReport(

@@ -39,12 +39,14 @@ def make_task(
     name: str | None = None,
     duration_minutes: int = 480,
     calendar_id: int = 1,
+    deadline: datetime | None = None,
 ) -> Task:
     return Task(
         unique_id=unique_id,
         name=name if name is not None else f"Task {unique_id}",
         duration_minutes=duration_minutes,
         calendar_id=calendar_id,
+        deadline=deadline,
     )
 
 

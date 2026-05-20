@@ -34,10 +34,15 @@ Sinks get `LF = project_finish`. Over each outgoing relation to successor `S` wi
 | FF   | `LF(S) - L`          |
 | SF   | `LF(S) - L + d`      |
 
-`LF(T) = min candidate`, `LS(T) = LF(T) - d`.
+`LF(T) = min candidate`, `LS(T) = LF(T) - d`. If a task carries a **deadline**, its `LF` is
+additionally capped at the deadline's working-minute offset — the deadline does not reschedule the
+task (the forward pass is untouched), it only tightens the late dates, so a missed deadline shows
+up as **negative total float** that propagates back along the driving path.
 
 ## Slack & critical path
-- **Total slack** = `LS - ES`. **Critical path** = tasks with total slack 0 (ascending UniqueID).
+- **Total slack** = `LS - ES`. **Critical path** = tasks with total slack `<= 0` (ascending
+  UniqueID) — `<= 0` rather than `== 0` so negative-float tasks (e.g. driven by a missed deadline)
+  are also critical. With no constraints/deadlines all slack is `>= 0`, so this matches `== 0`.
 - **Free slack** = `min` over successors of the gap to the successor's *early* dates
   (FS: `ES(S) - (EF(T)+L)`, SS: `ES(S) - (ES(T)+L)`, FF: `EF(S) - (EF(T)+L)`,
   SF: `EF(S) - (ES(T)+L)`); sinks get `project_finish - EF(T)`.

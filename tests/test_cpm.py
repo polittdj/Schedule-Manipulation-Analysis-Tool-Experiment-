@@ -111,6 +111,23 @@ def test_empty_schedule_raises_cpm_error() -> None:
         compute_cpm(schedule)
 
 
+def test_deadline_drives_negative_float() -> None:
+    # A(2d) -> B(3d); B has a finish deadline only 2 working days in (project start is Mon
+    # 2026-01-05 08:00), but B cannot finish until day 5. The deadline does not reschedule;
+    # it caps the late finish, so 3 working days of negative float appear and propagate to A.
+    tasks = (
+        make_task(1, duration_minutes=2 * DAY),
+        make_task(2, duration_minutes=3 * DAY, deadline=datetime(2026, 1, 6, 16, 0)),
+    )
+    result = compute_cpm(make_schedule(tasks=tasks, relations=(make_relation(1, 2),)))
+    assert result.project_finish == 5 * DAY  # forward pass is unaffected by the deadline
+    a, b = result.by_id(1), result.by_id(2)
+    assert b.late_finish == 2 * DAY  # capped at the deadline offset
+    assert b.total_slack == -3 * DAY
+    assert a.total_slack == -3 * DAY  # negative float propagates to the predecessor
+    assert result.critical_path == (1, 2)  # total_slack <= 0 -> both critical
+
+
 # --- calendar math ---------------------------------------------------------------------
 
 

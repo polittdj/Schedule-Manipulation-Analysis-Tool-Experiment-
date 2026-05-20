@@ -13,6 +13,7 @@ Each metric is a pure function `run_<name>(schedule, options) -> MetricResult`. 
 | 4 | Relationship Types | FS relations / all relations | `>= 90%` | the **non-FS** relations | predecessor UniqueID |
 | 6 | High Duration | tasks with duration > 44 working days / all tasks | `<= 5%` | the long tasks | duration (working days) |
 | 7 | High Float | tasks with total float > 44 working days / all tasks | `<= 5%` | the high-float tasks | total float (working days) |
+| 8 | Negative Float | tasks with total float < 0 / all tasks | `0%` (any negative fails) | the negative-float tasks | total float (working days) |
 
 Notes:
 - Metric 4 is an AT_LEAST metric: the numerator counts the *good* (FS) relations while the
@@ -27,8 +28,9 @@ Notes:
 - **Metrics 6/7** convert minutes to working days per each task's own calendar; the "44 working
   days" bar is the canonical DCMA threshold. Metric 6 uses the single modelled duration as the
   baseline duration. Metric 7 consumes the CPM total float.
-- **Coverage:** Metrics 1-4, 6, 7 are implemented. The remaining DCMA points need data the model
-  does not yet carry and are deferred (see `FIDELITY-DECISION-dcma-coverage.md`): Metric 5
-  (Hard Constraints) and 8 (Negative Float) need scheduling constraints; 9 (Invalid Dates),
-  11 (Missed Tasks), 13 (BEI) need actual/baseline dates; 10 (Resources), 12 (CPLI/critical-path
-  test), 14 need resources or a baseline.
+- **Metric 8** uses task **deadlines** (a deadline caps the late finish without rescheduling, so a
+  missed deadline yields negative total float). Offender ``value`` = total float in working days.
+- **Coverage:** Metrics 1-4, 6, 7, 8 are implemented. The rest need data the model does not yet
+  carry and are deferred (see `FIDELITY-DECISION-dcma-coverage.md`): Metric 5 (Hard Constraints)
+  needs scheduling constraints; 9 (Invalid Dates), 11 (Missed Tasks), 13 (BEI) need actual/baseline
+  dates; 10 (Resources), 12 (CPLI/critical-path test), 14 need resources or a baseline.

@@ -9,6 +9,7 @@ from app.metrics.high_float import run_high_float
 from app.metrics.lags import run_lags
 from app.metrics.leads import run_leads
 from app.metrics.logic import run_missing_logic
+from app.metrics.negative_float import run_negative_float
 from app.metrics.relationship_types import run_relationship_types
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "run_lags",
     "run_leads",
     "run_missing_logic",
+    "run_negative_float",
     "run_relationship_types",
 ]

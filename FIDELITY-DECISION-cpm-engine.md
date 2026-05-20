@@ -14,10 +14,14 @@
    Multi-calendar schedules make `EF(P) + L` ambiguous when predecessor and successor differ;
    cross-calendar conversion is deferred. Known-answer tests use one calendar, so they are exact.
 
-4. **As-soon-as-possible, no constraints.** SNET/MSO/deadline constraints and negative float
-   are not modelled in M4; every task starts as early as its logic allows. With no constraints,
-   zero-total-slack and longest-path coincide (so "critical = total_slack == 0" is exact here).
-   This is the standard simplification for a first CPM pass; constrained scheduling is later work.
+4. **As-soon-as-possible scheduling; deadlines, but not hard constraints.** The forward pass is
+   pure logic (every task starts as early as its predecessors allow) — SNET/MSO/MFO *scheduling*
+   constraints are still out of scope (modelling them without faithful CPM support would risk
+   silently-wrong dates). **Deadlines** (post-M5) are supported: a deadline caps the late finish in
+   the backward pass without rescheduling the task, so a missed deadline produces **negative total
+   float** that propagates back along the driving path. Because negative float can now occur, the
+   **critical path is `total_slack <= 0`** (not `== 0`); with no deadlines all slack is `>= 0`, so
+   this is identical to the original `== 0`.
 
 5. **`critical_path` is a `tuple`, not the spec's `list`.** A frozen dataclass with a `list`
    field is only shallow-immutable; a tuple makes the result genuinely immutable (and hashable).

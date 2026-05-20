@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -95,3 +95,11 @@ def test_self_loop_relation_rejected() -> None:
 def test_relation_type_serializes_as_value() -> None:
     relation = make_relation(1, 2, relation_type=RelationType.SF)
     assert json.loads(relation.model_dump_json())["relation_type"] == "SF"
+
+
+def test_task_deadline_round_trips() -> None:
+    task = make_task(1, deadline=datetime(2026, 3, 1, 17, 0))
+    restored = Task.model_validate_json(task.model_dump_json())
+    assert restored == task
+    assert restored.deadline == datetime(2026, 3, 1, 17, 0)
+    assert make_task(2).deadline is None  # defaults to no deadline
