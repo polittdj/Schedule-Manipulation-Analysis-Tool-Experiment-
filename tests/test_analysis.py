@@ -21,7 +21,7 @@ def test_analyze_schedule_composes_cpm_and_metrics() -> None:
     assert report.project_finish_minutes == 3 * DAY
     assert report.project_finish_working_days == 3.0
     assert report.critical_path == (1, 2, 3)
-    assert {m.metric_id for m in report.metrics} == {1, 2, 3, 4, 6, 7, 8}
+    assert {m.metric_id for m in report.metrics} == {1, 2, 3, 4, 5, 6, 7, 8}
     assert report.skipped_metrics == ()
     by_id = {m.metric_id: m for m in report.metrics}
     assert by_id[4].severity == Severity.PASS  # 100% FS
@@ -49,7 +49,7 @@ def test_analyze_endpoint_returns_report() -> None:
     body = resp.get_json()
     assert body["project_finish_working_days"] == 2.0
     assert body["critical_path"] == [1, 2]
-    assert {m["metric_id"] for m in body["metrics"]} == {1, 2, 3, 4, 6, 7, 8}
+    assert {m["metric_id"] for m in body["metrics"]} == {1, 2, 3, 4, 5, 6, 7, 8}
 
 
 def test_analyze_endpoint_rejects_invalid_schedule() -> None:
@@ -73,7 +73,7 @@ def test_analyze_skips_unrunnable_metrics_without_fabricating() -> None:
     # skipped (not faked PASS).
     schedule = make_schedule(tasks=(make_task(1, duration_minutes=DAY),), relations=())
     report = analyze_schedule(schedule)
-    assert {m.metric_id for m in report.metrics} == {1, 6, 7, 8}
+    assert {m.metric_id for m in report.metrics} == {1, 5, 6, 7, 8}
     assert {s.metric_id for s in report.skipped_metrics} == {2, 3, 4}
 
 

@@ -15,6 +15,7 @@ from app.cpm import TaskTiming, compute_cpm
 from app.cpm.calendar_math import minutes_to_working_days
 from app.exceptions import MetricError
 from app.metrics import (
+    run_hard_constraints,
     run_high_duration,
     run_high_float,
     run_lags,
@@ -117,6 +118,7 @@ def analyze_schedule(schedule: Schedule) -> AnalysisReport:
     run(2, lambda: run_leads(schedule))
     run(3, lambda: run_lags(schedule))
     run(4, lambda: run_relationship_types(schedule))
+    run(5, lambda: run_hard_constraints(schedule))
     run(6, lambda: run_high_duration(schedule))
     run(7, lambda: run_high_float(schedule, cpm))
     run(8, lambda: run_negative_float(schedule, cpm))
