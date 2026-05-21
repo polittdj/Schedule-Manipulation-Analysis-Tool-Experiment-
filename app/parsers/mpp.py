@@ -20,9 +20,9 @@ from pathlib import Path
 from app.models import Schedule
 
 _UNAVAILABLE_MESSAGE = (
-    "Real .mpp parsing requires MS Project COM automation (win32com), which is not "
-    "available in this environment. In tests, monkeypatch 'app.parsers.mpp.parse_mpp' with "
-    "a synthetic-Schedule factory; a production build would supply a real adapter here."
+    ".mpp is MS Project's proprietary binary format and cannot be read here (it needs MS "
+    "Project's COM automation). In MS Project, use File -> Save As -> XML and load that .xml "
+    "file instead; Primavera P6 .xer exports are also supported."
 )
 
 

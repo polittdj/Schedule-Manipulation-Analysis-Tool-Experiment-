@@ -14,7 +14,7 @@ from tests.conftest import make_schedule
 def test_parse_mpp_stub_raises_not_implemented() -> None:
     with pytest.raises(NotImplementedError) as excinfo:
         mpp.parse_mpp(Path("schedule.mpp"))
-    assert "win32com" in str(excinfo.value)
+    assert "Save As" in str(excinfo.value)  # points users to the XML export path
 
 
 def test_parse_schedule_dispatches_through_monkeypatched_seam(
@@ -33,4 +33,4 @@ def test_parse_schedule_dispatches_through_monkeypatched_seam(
 
 def test_parse_schedule_rejects_unknown_extension() -> None:
     with pytest.raises(NotImplementedError):
-        parse_schedule(Path("schedule.xer"))
+        parse_schedule(Path("schedule.docx"))  # .xml/.xer/.json/.mpp are handled; .docx is not

@@ -5,8 +5,16 @@ build ships a **stub** for MS Project `.mpp` (real parsing needs COM automation 
 unavailable in this sandbox); the function is a **seam** that tests monkeypatch.
 
 ## Interface
-- `app.parsers.mpp.parse_mpp(file_path: Path) -> Schedule`
-- `app.parsers.parse_schedule(file_path: Path) -> Schedule` — dispatches by file extension.
+- `app.parsers.parse_schedule(file_path: Path) -> Schedule` — dispatches by file extension:
+  - `.json` → the tool's own Schedule JSON
+  - `.xml` → `app.parsers.msp_xml.parse_msp_xml` (MS Project XML / MSPDI, best-effort)
+  - `.xer` → `app.parsers.xer.parse_xer` (Primavera P6 export, best-effort)
+  - `.mpp` → `app.parsers.mpp.parse_mpp` — raises (binary; use *Save As → XML* in MS Project)
+- `POST /upload` (web) accepts a `.xml`/`.xer`/`.json` file and returns the parsed Schedule JSON.
+
+The `.xml`/`.xer` importers are **best-effort** (no real vendor samples were available when
+written) — see `FIDELITY-COMPROMISE-importers.md`. They were validated against crafted samples
+in `tests/test_parsers_native.py`.
 
 ## Output guarantees (what every parser MUST produce)
 - A `Schedule` that passes all model validators, so downstream CPM/metrics can trust it:

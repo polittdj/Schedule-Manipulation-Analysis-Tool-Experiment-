@@ -12,5 +12,7 @@ def test_index_page_serves_ui() -> None:
     body = resp.get_data(as_text=True)
     assert "Analyze schedule" in body  # the main button
     assert "/analyze" in body  # the page posts the schedule to the analysis endpoint
-    assert "Open .json file" in body  # the file picker
+    assert "Open .json file" in body  # the .json file picker
+    assert "Import .xml / .xer" in body  # the native-file importer
+    assert "/upload" in body  # the import posts to the upload endpoint
     assert 'type="file"' in body
