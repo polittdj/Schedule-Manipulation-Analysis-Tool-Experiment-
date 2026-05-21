@@ -13,8 +13,9 @@ Known limitations / assumptions (verify against your real files):
   validated the MPXJ→model mapping only against MSPDI XML read through MPXJ (no real `.mpp` sample
   here; the reader is format-agnostic after read). MPXJ calendars' working-days/holidays aren't
   mapped (durations are still converted faithfully via the project's minutes-per-day). If Java/MPXJ
-  is unavailable the tool says so and points to *Save As → XML*. The bundled standalone `.exe` does
-  not include Java, so use the launcher (or a Python venv) on a machine with Java for `.mpp`.
+  is unavailable the tool says so and points to *Save As → XML*. The CI-built standalone app bundles
+  a jlink'd JRE (`./jre`), so `.mpp` works in it with no separately-installed Java; a self-built app
+  only bundles a JRE if Java was present at build time (otherwise `.mpp` needs Java on the machine).
 - **MS Project XML units** taken on documented convention, not verified against a real file:
   `LinkLag` is read as **tenths of a minute** (`lag_minutes = LinkLag / 10`); `<Duration>` as ISO-8601
   working time; link `Type` 0/1/2/3 = FF/FS/SF/SS; `ConstraintType` 0–7 per the MSPDI table; WeekDay

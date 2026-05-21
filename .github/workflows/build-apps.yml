@@ -33,10 +33,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # Java is needed only at build time: we jlink a self-contained JRE into ./jre, which the
+      # spec bundles so the finished app reads native .mpp with no Java on the user's machine.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt -r requirements-mpp.txt pyinstaller
+      # ALL-MODULE-PATH keeps jdk.charsets et al. (a minimized JRE breaks MPXJ's CharsetHelper).
+      - name: Build a bundled JRE
+        shell: bash
+        run: |
+          rm -rf jre
+          "$JAVA_HOME/bin/jlink" --add-modules ALL-MODULE-PATH \
+            --output jre --no-header-files --no-man-pages
       - name: Build the executable
         run: pyinstaller --noconfirm schedule_tool.spec
       - name: Upload the app

@@ -11,6 +11,20 @@ fi
 
 ./.venv/bin/python -m pip install --quiet --upgrade pip
 ./.venv/bin/python -m pip install --quiet -r requirements.txt pyinstaller || { echo "Install failed."; read -r _; exit 1; }
+# Optional: native .mpp support. Needs Java; if absent we still build a working app (no .mpp).
+./.venv/bin/python -m pip install --quiet -r requirements-mpp.txt 2>/dev/null \
+  && echo "MPXJ installed (native .mpp enabled)." || echo "Skipping MPXJ (.mpp import will be unavailable)."
+JLINK=""
+if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/jlink" ]; then JLINK="$JAVA_HOME/bin/jlink"
+elif command -v jlink >/dev/null 2>&1; then JLINK="jlink"; fi
+if [ -n "$JLINK" ]; then
+  rm -rf jre
+  "$JLINK" --add-modules ALL-MODULE-PATH --output jre --no-header-files --no-man-pages \
+    && echo "Bundled a JRE in ./jre (the app will read .mpp with no separate Java)." \
+    || echo "jlink failed; the app will still build but .mpp needs Java on the user's machine."
+else
+  echo "No Java (jlink) found; the app will build but .mpp needs Java on the user's machine."
+fi
 ./.venv/bin/pyinstaller --noconfirm --clean schedule_tool.spec || { echo "Build failed."; read -r _; exit 1; }
 
 echo

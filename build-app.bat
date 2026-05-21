@@ -12,6 +12,19 @@ if not exist ".venv" (
 ".venv\Scripts\python" -m pip install --quiet --upgrade pip
 ".venv\Scripts\python" -m pip install --quiet -r requirements.txt pyinstaller
 if errorlevel 1 ( echo Install failed. & pause & exit /b 1 )
+
+REM Optional: native .mpp support. Needs Java; if absent we still build a working app (no .mpp).
+".venv\Scripts\python" -m pip install --quiet -r requirements-mpp.txt 2>nul && (echo MPXJ installed ^(native .mpp enabled^).) || (echo Skipping MPXJ ^(.mpp import will be unavailable^).)
+set "JLINK="
+if exist "%JAVA_HOME%\bin\jlink.exe" set "JLINK=%JAVA_HOME%\bin\jlink.exe"
+if not defined JLINK for %%J in (jlink.exe) do if not "%%~$PATH:J"=="" set "JLINK=%%~$PATH:J"
+if defined JLINK (
+  if exist jre rmdir /s /q jre
+  "%JLINK%" --add-modules ALL-MODULE-PATH --output jre --no-header-files --no-man-pages && (echo Bundled a JRE in .\jre ^(the app will read .mpp with no separate Java^).) || (echo jlink failed; .mpp will need Java on the user's machine.)
+) else (
+  echo No Java ^(jlink^) found; the app will build but .mpp needs Java on the user's machine.
+)
+
 ".venv\Scripts\pyinstaller" --noconfirm --clean schedule_tool.spec
 if errorlevel 1 ( echo Build failed. & pause & exit /b 1 )
 

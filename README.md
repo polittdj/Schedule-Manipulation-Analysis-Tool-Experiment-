@@ -15,11 +15,14 @@ The easiest option — a single self-contained program, nothing to install:
 3. Unzip it and **double-click `ScheduleTool`** (`ScheduleTool.exe` on Windows). Your browser opens
    to the tool. A small console window stays open — close it to stop the tool.
    - First open on macOS may be blocked: right-click → **Open** → **Open**. (The app is unsigned.)
+   - The CI-built app **bundles a Java runtime**, so native `.mpp` import works with nothing else to
+     install.
 
 Prefer to build it yourself? Double-click **`build-app.command`** (macOS/Linux) or
 **`build-app.bat`** (Windows) — it produces the same program in the `dist/` folder. (Building needs
 Python 3.13 once; *running* the result does not. PyInstaller can't cross-build, so build on the OS
-you want the app for.)
+you want the app for.) If a JDK (with `jlink`) is on your machine at build time, the script bundles a
+JRE so the built app reads `.mpp` too; otherwise it still builds, just without native `.mpp`.
 
 ## Quick start — click to run (no terminal)
 You need **Python 3.13** installed once (from python.org). Then:
@@ -43,7 +46,8 @@ You need **Python 3.13** installed once (from python.org). Then:
 The web UI's **Import** button reads:
 - **MS Project XML** (`.xml`, *File → Save As → XML*) and **Primavera P6** (`.xer`) — pure-Python, no setup.
 - **Native MS Project `.mpp`** — via **MPXJ** (optional): needs Java 17+ and `pip install -r requirements-mpp.txt`
-  (the launcher installs it automatically when possible). Without Java/MPXJ, use *Save As → XML*.
+  (the launcher installs it automatically when possible). The CI-built standalone app bundles its own
+  JRE, so `.mpp` works there with no setup. Without Java/MPXJ, use *Save As → XML*.
 
 Importers are **best-effort** (validated against crafted samples; the `.mpp`/MPXJ path is the most
 mature) — eyeball an imported schedule before relying on it. See `FIDELITY-COMPROMISE-importers.md`
