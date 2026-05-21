@@ -7,6 +7,24 @@ is an **autonomous build experiment** — see [`EXPERIMENT-REPORT.md`](EXPERIMEN
 > Fidelity-first: results aim to match Acumen Fuse / Steelray / MS Project semantics.
 > Speed and elegance are tiebreakers, never overrides.
 
+## Quick start — click to run (no terminal)
+You need **Python 3.13** installed once (from python.org). Then:
+1. Download this project (green **Code** button → **Download ZIP**, then unzip — or `git clone`).
+2. Double-click the launcher in the project folder:
+   - **macOS / Linux:** `Start-Schedule-Tool.command`
+   - **Windows:** `Start-Schedule-Tool.bat`
+3. The first run installs everything automatically (about a minute). Then your browser opens to
+   the tool. Paste a schedule (or click **Load example**) and press **Analyze schedule**.
+4. To stop it, close the little window the launcher opened.
+
+**Make it a desktop icon:**
+- **Windows:** right-click `Start-Schedule-Tool.bat` → **Send to → Desktop (create shortcut)**.
+  (Right-click the shortcut → Properties → Change Icon to pick a picture.)
+- **macOS:** drag `Start-Schedule-Tool.command` to the Desktop while holding **⌘+⌥** (makes an alias).
+  If macOS blocks it the first time, right-click → **Open** → **Open**.
+- **Linux:** right-click `Start-Schedule-Tool.command` → mark as executable, then copy it (or a
+  `.desktop` shortcut) to your Desktop.
+
 ## Status
 - **M1 — Scaffolding:** Flask app factory, 500 MB upload guard + 413 handler, CI.
 - **M2 — Data model:** strict/frozen Pydantic `Schedule`/`Task`/`Relation`/`Calendar` (+ constraints, deadlines, baseline/actual tracking data).
@@ -29,18 +47,21 @@ pip install -r requirements-dev.txt
 ruff check . && ruff format --check . && mypy app/ && pytest -q
 ```
 
-## Running
+## Running (for developers)
 ```sh
-flask --app "app:create_app" run        # http://localhost:5000/health
-
-# Analyze a schedule (JSON Schedule body in -> CPM + DCMA metrics report out):
-curl -X POST http://localhost:5000/analyze \
-  -H 'Content-Type: application/json' --data-binary @schedule.json
+python launch.py                          # starts the server AND opens the browser UI at /
+# or:
+flask --app "app:create_app" run          # http://localhost:5000/  (browser UI), /health, /analyze
 ```
-`POST /analyze` validates a JSON `Schedule`, runs the CPM engine and all 14 DCMA metrics, and
-returns per-task timings (ES/EF/LS/LF/slack), the critical path, project finish (working days),
-per-metric results, and an integrity/health score (share of runnable metrics that pass, with the
-failing metrics listed as findings).
+- `GET /` — the browser UI (paste a schedule, click Analyze).
+- `POST /analyze` — validates a JSON `Schedule`, runs the CPM engine and all 14 DCMA metrics, and
+  returns per-task timings (ES/EF/LS/LF/slack), the critical path, project finish (working days),
+  per-metric results, and an integrity/health score (share of runnable metrics that pass, with the
+  failing metrics listed as findings). Example:
+  ```sh
+  curl -X POST http://localhost:5000/analyze \
+    -H 'Content-Type: application/json' --data-binary @schedule.json
+  ```
 
 ## Security note
 Schedule files (`*.mpp`, `*.xer`, `*.xml`) may carry Controlled Unclassified Information

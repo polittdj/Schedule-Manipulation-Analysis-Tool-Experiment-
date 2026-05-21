@@ -6,7 +6,7 @@ A thin transport layer over the analysis core (``app.analysis`` / ``app.cpm`` /
 
 from __future__ import annotations
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, render_template, request
 from pydantic import ValidationError
 
 from app.analysis import analyze_schedule
@@ -16,6 +16,10 @@ from app.models import Schedule
 
 def register_routes(app: Flask) -> None:
     """Register HTTP routes on the given app."""
+
+    @app.get("/")
+    def index() -> str:
+        return render_template("index.html")
 
     @app.get("/health")
     def health() -> Response:

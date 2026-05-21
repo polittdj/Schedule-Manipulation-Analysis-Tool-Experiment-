@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Schedule Manipulation Analysis Tool</title>
+  <style>
+    :root { --ok: #1a7f37; --bad: #b42318; --warn: #b54708; --muted: #667085; --line: #e4e7ec; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
+           color: #101828; background: #f7f8fa; }
+    header { background: #0b1f3a; color: #fff; padding: 20px 24px; }
+    header h1 { margin: 0; font-size: 20px; }
+    header p { margin: 6px 0 0; color: #b9c4d6; font-size: 14px; }
+    main { max-width: 1000px; margin: 0 auto; padding: 24px; display: grid;
+           grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+    h2 { font-size: 15px; margin: 0 0 10px; }
+    textarea { width: 100%; height: 360px; font-family: ui-monospace, Menlo, Consolas, monospace;
+               font-size: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button { font-size: 14px; padding: 9px 14px; border-radius: 8px; border: 1px solid transparent;
+             cursor: pointer; }
+    .primary { background: #1257d6; color: #fff; }
+    .ghost { background: #fff; color: #1257d6; border-color: #cdd9f0; }
+    .score { font-size: 44px; font-weight: 700; line-height: 1; }
+    .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px;
+            border-radius: 999px; }
+    .PASS { color: var(--ok); } .FAIL { color: var(--bad); } .muted { color: var(--muted); }
+    .bar { height: 10px; background: #eef0f3; border-radius: 999px; overflow: hidden; margin: 8px 0; }
+    .bar > span { display: block; height: 100%; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+    .summary { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+    .summary div b { display: block; font-size: 20px; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    code { background: #f0f2f5; padding: 1px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Schedule Manipulation Analysis Tool</h1>
+    <p>Paste a project schedule, click Analyze, and see its critical path, finish date, and the 14 DCMA quality checks.</p>
+  </header>
+  <main>
+    <section class="card">
+      <h2>1. Your schedule (JSON)</h2>
+      <textarea id="schedule" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="primary" onclick="analyze()">Analyze schedule</button>
+        <button class="ghost" onclick="loadExample()">Load example</button>
+      </div>
+      <p class="hint">Time is in working minutes — 1 work day = 8h = <code>480</code>. <code>"FS"</code> means task B starts after task A finishes.</p>
+    </section>
+    <section class="card">
+      <h2>2. Results</h2>
+      <div id="results"><p class="muted">Click <b>Analyze schedule</b> to see the report.</p></div>
+    </section>
+  </main>
+
+  <script>
+    const EXAMPLE = {
+      name: "House Build",
+      project_start: "2026-01-05T08:00:00",
+      calendars: [{ calendar_id: 1, name: "Standard 5-day", hours_per_day: 8 }],
+      tasks: [
+        { unique_id: 1, name: "Design",  duration_minutes: 960,  calendar_id: 1, resource_names: ["Architect"] },
+        { unique_id: 2, name: "Build",   duration_minutes: 2400, calendar_id: 1, resource_names: ["Crew"] },
+        { unique_id: 3, name: "Inspect", duration_minutes: 480,  calendar_id: 1, resource_names: ["Inspector"] }
+      ],
+      relations: [
+        { predecessor_id: 1, successor_id: 2, relation_type: "FS", lag_minutes: 0 },
+        { predecessor_id: 2, successor_id: 3, relation_type: "FS", lag_minutes: 0 }
+      ]
+    };
+
+    function loadExample() {
+      document.getElementById("schedule").value = JSON.stringify(EXAMPLE, null, 2);
+    }
+
+    function scoreColor(s) { return s >= 95 ? "var(--ok)" : s >= 80 ? "var(--warn)" : "var(--bad)"; }
+
+    async function analyze() {
+      const out = document.getElementById("results");
+      out.innerHTML = "<p class='muted'>Analyzing…</p>";
+      let resp, data;
+      try {
+        resp = await fetch("/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: document.getElementById("schedule").value
+        });
+        data = await resp.json();
+      } catch (e) {
+        out.innerHTML = "<p class='FAIL'>Could not reach the tool, or the JSON is not valid text. Is the tool still running?</p>";
+        return;
+      }
+      if (!resp.ok) {
+        out.innerHTML = "<p class='FAIL'><b>Could not analyze:</b> " +
+          (data.message || data.error || ("HTTP " + resp.status)) + "</p>";
+        return;
+      }
+      render(data);
+    }
+
+    function render(d) {
+      const h = d.health;
+      let html = "";
+      html += "<div style='text-align:center;margin-bottom:12px'>";
+      html += "<div class='score' style='color:" + scoreColor(h.score) + "'>" + h.score.toFixed(0) + "<span style='font-size:18px'>/100</span></div>";
+      html += "<div class='muted'>schedule health score</div></div>";
+      html += "<div class='bar'><span style='width:" + h.score + "%;background:" + scoreColor(h.score) + "'></span></div>";
+
+      html += "<div class='summary'>";
+      html += "<div><span class='muted'>Finish</span><b>" + d.project_finish_working_days + " days</b></div>";
+      html += "<div><span class='muted'>Critical path</span><b>" + (d.critical_path.join(" → ") || "—") + "</b></div>";
+      html += "<div><span class='muted'>Checks failed</span><b>" + h.metrics_failed + " of " + h.metrics_run + "</b></div>";
+      html += "</div>";
+
+      html += "<table><thead><tr><th>#</th><th>DCMA check</th><th>Result</th></tr></thead><tbody>";
+      for (const m of d.metrics) {
+        const extra = m.measured != null ? " (" + m.measured.toFixed(2) + ")"
+                      : (m.denominator ? " (" + m.numerator + "/" + m.denominator + ")" : "");
+        html += "<tr><td>" + m.metric_id + "</td><td>" + m.metric_name + "</td>" +
+                "<td class='" + m.severity + "'><b>" + m.severity + "</b>" + extra + "</td></tr>";
+      }
+      for (const s of d.skipped_metrics) {
+        html += "<tr class='muted'><td>" + s.metric_id + "</td><td>(needs more data)</td><td>skipped</td></tr>";
+      }
+      html += "</tbody></table>";
+      out_set(html);
+    }
+    function out_set(html) { document.getElementById("results").innerHTML = html; }
+
+    loadExample();
+  </script>
+</body>
+</html>
