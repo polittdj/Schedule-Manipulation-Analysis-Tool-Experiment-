@@ -1,16 +1,15 @@
 # Parser contract
 
-A parser turns a vendor schedule file into a validated `app.models.Schedule`. The current
-build ships a **stub** for MS Project `.mpp` (real parsing needs COM automation that is
-unavailable in this sandbox); the function is a **seam** that tests monkeypatch.
+A parser turns a vendor schedule file into a validated `app.models.Schedule`.
 
 ## Interface
 - `app.parsers.parse_schedule(file_path: Path) -> Schedule` — dispatches by file extension:
   - `.json` → the tool's own Schedule JSON
-  - `.xml` → `app.parsers.msp_xml.parse_msp_xml` (MS Project XML / MSPDI, best-effort)
-  - `.xer` → `app.parsers.xer.parse_xer` (Primavera P6 export, best-effort)
-  - `.mpp` → `app.parsers.mpp.parse_mpp` — raises (binary; use *Save As → XML* in MS Project)
-- `POST /upload` (web) accepts a `.xml`/`.xer`/`.json` file and returns the parsed Schedule JSON.
+  - `.xml` → `app.parsers.msp_xml.parse_msp_xml` (MS Project XML / MSPDI, pure-Python, best-effort)
+  - `.xer` → `app.parsers.xer.parse_xer` (Primavera P6 export, pure-Python, best-effort)
+  - `.mpp` → `app.parsers.mpp.parse_mpp` (native binary, via **MPXJ** — optional: needs Java 17+ and
+    `pip install -r requirements-mpp.txt`; raises with *Save As → XML* guidance if unavailable)
+- `POST /upload` (web) accepts a `.xml`/`.xer`/`.mpp`/`.json` file and returns the parsed Schedule JSON.
 
 The `.xml`/`.xer` importers are **best-effort** (no real vendor samples were available when
 written) — see `FIDELITY-COMPROMISE-importers.md`. They were validated against crafted samples

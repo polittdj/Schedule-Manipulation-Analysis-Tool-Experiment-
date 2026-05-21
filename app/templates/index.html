@@ -53,16 +53,17 @@
         <label class="ghost" style="display:inline-block;line-height:1">Open .json file…
           <input id="file" type="file" accept=".json,application/json" style="display:none" onchange="openFile(event)">
         </label>
-        <label class="ghost" style="display:inline-block;line-height:1">Import .xml / .xer…
-          <input id="importfile" type="file" accept=".xml,.xer" style="display:none" onchange="importFile(event)">
+        <label class="ghost" style="display:inline-block;line-height:1">Import .xml / .xer / .mpp…
+          <input id="importfile" type="file" accept=".xml,.xer,.mpp" style="display:none" onchange="importFile(event)">
         </label>
         <button class="ghost" onclick="saveFile()">Save .json</button>
       </div>
-      <p class="hint"><b>Open .json</b> loads the tool's own format. <b>Import .xml / .xer</b> reads an
-      MS Project XML export or a Primavera P6 <code>.xer</code> (best-effort — eyeball the result).
-      MS Project <code>.mpp</code> is binary and can't be read directly: in MS Project use
-      <i>File → Save As → XML</i>, then Import the <code>.xml</code>. Time is in working minutes
-      (1 work day = 8h = <code>480</code>); <code>"FS"</code> = task B starts after task A finishes.</p>
+      <p class="hint"><b>Open .json</b> loads the tool's own format. <b>Import</b> reads an MS Project
+      XML export, a Primavera P6 <code>.xer</code>, or a native MS Project <code>.mpp</code>
+      (best-effort — eyeball the result). <code>.mpp</code> needs Java + the optional MPXJ library
+      (the launcher installs it); if it's unavailable, use <i>File → Save As → XML</i> in MS Project
+      and import the <code>.xml</code>. Time is in working minutes (1 work day = 8h = <code>480</code>);
+      <code>"FS"</code> = task B starts after task A finishes.</p>
     </section>
     <section class="card">
       <h2>2. Results</h2>

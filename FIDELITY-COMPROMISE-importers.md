@@ -7,9 +7,14 @@ reconstructed from format knowledge and tested only against hand-crafted samples
 
 Known limitations / assumptions (verify against your real files):
 
-- **`.mpp` is not supported at all.** It is a proprietary binary; reading it needs MS Project COM
-  (Windows-only) or a heavyweight Java library, neither of which fits the portable app. Workflow:
-  in MS Project, *File → Save As → XML*, then import the `.xml`.
+- **`.mpp` is read via MPXJ** (the industry-standard Java library), an **optional** capability that
+  needs Java 17+ and `pip install -r requirements-mpp.txt`. MPXJ is mature and well-tested, so the
+  `.mpp`/MPXJ path is *more* trustworthy than the hand-rolled `.xml`/`.xer` parsers below — though I
+  validated the MPXJ→model mapping only against MSPDI XML read through MPXJ (no real `.mpp` sample
+  here; the reader is format-agnostic after read). MPXJ calendars' working-days/holidays aren't
+  mapped (durations are still converted faithfully via the project's minutes-per-day). If Java/MPXJ
+  is unavailable the tool says so and points to *Save As → XML*. The bundled standalone `.exe` does
+  not include Java, so use the launcher (or a Python venv) on a machine with Java for `.mpp`.
 - **MS Project XML units** taken on documented convention, not verified against a real file:
   `LinkLag` is read as **tenths of a minute** (`lag_minutes = LinkLag / 10`); `<Duration>` as ISO-8601
   working time; link `Type` 0/1/2/3 = FF/FS/SF/SS; `ConstraintType` 0–7 per the MSPDI table; WeekDay

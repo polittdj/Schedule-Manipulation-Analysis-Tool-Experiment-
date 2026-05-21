@@ -11,7 +11,14 @@ from app.parsers import mpp, parse_schedule
 from tests.conftest import make_schedule
 
 
-def test_parse_mpp_stub_raises_not_implemented() -> None:
+def test_parse_mpp_without_mpxj_guides_to_xml() -> None:
+    # When MPXJ isn't installed, .mpp parsing raises with guidance (the universal fallback).
+    try:
+        import mpxj  # noqa: F401
+
+        pytest.skip("mpxj is installed here; the no-MPXJ guidance path is not exercised")
+    except ImportError:
+        pass
     with pytest.raises(NotImplementedError) as excinfo:
         mpp.parse_mpp(Path("schedule.mpp"))
     assert "Save As" in str(excinfo.value)  # points users to the XML export path

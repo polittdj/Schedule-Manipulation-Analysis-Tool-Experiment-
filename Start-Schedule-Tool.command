@@ -11,6 +11,8 @@ if [ ! -d ".venv" ]; then
   "$PY" -m venv .venv || { echo "Could not create the environment. Install Python 3.13 first."; read -r _; exit 1; }
   ./.venv/bin/python -m pip install --quiet --upgrade pip
   ./.venv/bin/python -m pip install -r requirements.txt || { echo "Install failed."; read -r _; exit 1; }
+  # Optional: native .mpp reading via MPXJ (needs Java). Best-effort — the app runs fine without it.
+  ./.venv/bin/python -m pip install --quiet -r requirements-mpp.txt 2>/dev/null || true
 fi
 
 ./.venv/bin/python launch.py

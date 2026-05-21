@@ -12,6 +12,8 @@ if not exist ".venv" (
   ".venv\Scripts\python" -m pip install --quiet --upgrade pip
   ".venv\Scripts\python" -m pip install -r requirements.txt
   if errorlevel 1 ( echo Install failed. & pause & exit /b 1 )
+  REM Optional: native .mpp reading via MPXJ (needs Java). Best-effort - app runs fine without it.
+  ".venv\Scripts\python" -m pip install --quiet -r requirements-mpp.txt 2>nul
 )
 
 ".venv\Scripts\python" launch.py

@@ -39,10 +39,20 @@ You need **Python 3.13** installed once (from python.org). Then:
 - **Linux:** right-click `Start-Schedule-Tool.command` → mark as executable, then copy it (or a
   `.desktop` shortcut) to your Desktop.
 
+## Loading real files
+The web UI's **Import** button reads:
+- **MS Project XML** (`.xml`, *File → Save As → XML*) and **Primavera P6** (`.xer`) — pure-Python, no setup.
+- **Native MS Project `.mpp`** — via **MPXJ** (optional): needs Java 17+ and `pip install -r requirements-mpp.txt`
+  (the launcher installs it automatically when possible). Without Java/MPXJ, use *Save As → XML*.
+
+Importers are **best-effort** (validated against crafted samples; the `.mpp`/MPXJ path is the most
+mature) — eyeball an imported schedule before relying on it. See `FIDELITY-COMPROMISE-importers.md`
+and `docs/skills/native-mpp-parser.md`.
+
 ## Status
 - **M1 — Scaffolding:** Flask app factory, 500 MB upload guard + 413 handler, CI.
 - **M2 — Data model:** strict/frozen Pydantic `Schedule`/`Task`/`Relation`/`Calendar` (+ constraints, deadlines, baseline/actual tracking data).
-- **M3 — Parser seam:** monkeypatchable stub (real `.mpp` parsing needs MS Project COM, out of scope).
+- **M3 — Parser seam:** native import — MS Project `.xml` & `.mpp` (MPXJ) and Primavera `.xer`.
 - **M4 — CPM engine:** FS/SS/FF/SF + lag, MS Project date constraints, deadlines, total/free slack, negative float, critical path.
 - **M5+ — DCMA metrics:** **all 14** of the DCMA 14-Point assessment, plus an integrity/health score.
 

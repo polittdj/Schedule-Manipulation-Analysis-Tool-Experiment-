@@ -6,10 +6,13 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
+
 from app import create_app
 from app.analysis import analyze_schedule
 from app.models import ConstraintType, RelationType
 from app.parsers import parse_schedule
+from app.parsers.mpp import parse_mpp
 from app.parsers.msp_xml import parse_msp_xml
 from app.parsers.xer import parse_xer
 
@@ -146,7 +149,13 @@ def test_upload_endpoint_imports_xml() -> None:
     assert {t["unique_id"] for t in schedule["tasks"]} == {1, 2}
 
 
-def test_upload_endpoint_rejects_mpp() -> None:
+def test_upload_endpoint_rejects_mpp_without_mpxj() -> None:
+    try:
+        import mpxj  # noqa: F401
+
+        pytest.skip("mpxj installed; a bogus .mpp would error differently, not 415")
+    except ImportError:
+        pass
     client = create_app({"TESTING": True}).test_client()
     resp = client.post(
         "/upload",
@@ -155,3 +164,20 @@ def test_upload_endpoint_rejects_mpp() -> None:
     )
     assert resp.status_code == 415
     assert "Save As" in resp.get_json()["message"]
+
+
+def test_mpp_parser_via_mpxj(tmp_path: Path) -> None:
+    pytest.importorskip("mpxj")  # needs MPXJ + a JVM (Java); skipped otherwise
+    # UniversalProjectReader reads MSPDI XML with the same object model it uses for .mpp.
+    path = tmp_path / "p.xml"
+    path.write_text(_MSP_XML)
+    schedule = parse_mpp(path)
+
+    assert {t.unique_id for t in schedule.tasks} == {1, 2}
+    build = next(t for t in schedule.tasks if t.unique_id == 2)
+    assert build.duration_minutes == 2400  # PT40H -> minutes via MPXJ unit conversion
+    assert build.constraint_type == ConstraintType.SNET
+    link = schedule.relations[0]
+    assert link.relation_type == RelationType.FS
+    assert link.lag_minutes == 480
+    analyze_schedule(schedule)
