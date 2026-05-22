@@ -24,6 +24,7 @@ from schedule_forensics.dcma_checks import run_structural_checks
 from schedule_forensics.dcma_progress import run_progress_checks
 from schedule_forensics.driving_path import analyze_driving_path
 from schedule_forensics.metrics_common import MetricResult, MetricStatus
+from schedule_forensics.performance_indices import run_performance_indices
 from schedule_forensics.schemas import Schedule
 
 
@@ -35,6 +36,12 @@ class ScheduleAnalysis:
     be computed (``cpm_error`` then carries the reason). ``dcma`` is all 14 checks
     in id order (DCMA-01..14). ``health_score`` is the integrity score described in
     the module docstring; ``findings`` names the runnable DCMA metrics that FAILED.
+
+    ``performance_indices`` holds the earned-value indices (SPI, SPI(t)). They are
+    SKIPPED unless the schedule carries earned-value data (``budgeted_cost`` +
+    baseline dates), and are deliberately kept OUT of ``health_score``/``findings``
+    -- those stay DCMA-14-only, so an EV index never silently moves the DCMA
+    integrity score.
     """
 
     project_finish: int | None
@@ -45,6 +52,7 @@ class ScheduleAnalysis:
     health_score: float | None
     findings: tuple[str, ...]
     cpm_error: str | None
+    performance_indices: tuple[MetricResult, ...] = ()
 
 
 def analyze_schedule(schedule: Schedule) -> ScheduleAnalysis:
@@ -69,6 +77,10 @@ def analyze_schedule(schedule: Schedule) -> ScheduleAnalysis:
     health_score = 100.0 * len(passed) / len(runnable) if runnable else None
     findings = tuple(m.name for m in runnable if m.status is MetricStatus.FAIL)
 
+    # Earned-value indices: independent of the DCMA integrity score (kept out of
+    # health_score/findings on purpose). SKIPPED unless EV data is present.
+    performance_indices = run_performance_indices(schedule)
+
     return ScheduleAnalysis(
         project_finish=cpm.project_finish if cpm is not None else None,
         critical_path=cpm.critical_path if cpm is not None else (),
@@ -78,4 +90,5 @@ def analyze_schedule(schedule: Schedule) -> ScheduleAnalysis:
         health_score=health_score,
         findings=findings,
         cpm_error=cpm_error,
+        performance_indices=performance_indices,
     )

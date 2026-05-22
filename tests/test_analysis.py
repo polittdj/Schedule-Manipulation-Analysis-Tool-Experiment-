@@ -85,3 +85,49 @@ def test_health_none_when_nothing_runnable() -> None:
     assert all(m.status is MetricStatus.SKIPPED for m in analysis.dcma)
     assert analysis.health_score is None
     assert analysis.findings == ()
+
+
+def test_performance_indices_skipped_without_ev_data() -> None:
+    # A normal schedule (no budgeted_cost/baselines) -> SPI/SPI(t) present but SKIPPED,
+    # never fabricated.
+    analysis = analyze_schedule(_sched([_task(1, 960), _task(2, 480)]))
+    assert [m.metric_id for m in analysis.performance_indices] == ["SPI", "SPI(t)"]
+    assert all(m.status is MetricStatus.SKIPPED for m in analysis.performance_indices)
+
+
+def test_performance_indices_computed_with_ev_data_without_moving_health() -> None:
+    # Behind-schedule EV inputs -> SPI runnable (FAIL at 0.75); the DCMA-only health
+    # score must NOT include the EV index (it stays a function of the DCMA tuple).
+    d7, d8 = dt.datetime(2025, 1, 7, 8), dt.datetime(2025, 1, 8, 8)
+    schedule = _sched(
+        [
+            _task(
+                1,
+                480,
+                percent_complete=100.0,
+                baseline_start=_START,
+                baseline_finish=d7,
+                budgeted_cost=100.0,
+            ),
+            _task(
+                2,
+                480,
+                percent_complete=50.0,
+                baseline_start=d7,
+                baseline_finish=d8,
+                budgeted_cost=100.0,
+            ),
+        ]
+    )
+    schedule = schedule.model_copy(update={"status_date": d8})
+    analysis = analyze_schedule(schedule)
+
+    spi = next(m for m in analysis.performance_indices if m.metric_id == "SPI")
+    assert spi.status is MetricStatus.FAIL
+    assert spi.measured is not None and abs(spi.measured - 0.75) < 1e-9
+
+    # Health score is computed purely from the DCMA tuple (EV excluded).
+    runnable = [m for m in analysis.dcma if m.status in (MetricStatus.PASS, MetricStatus.FAIL)]
+    passed = [m for m in runnable if m.status is MetricStatus.PASS]
+    expected = 100.0 * len(passed) / len(runnable) if runnable else None
+    assert analysis.health_score == expected
