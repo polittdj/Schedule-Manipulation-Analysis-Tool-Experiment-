@@ -36,7 +36,7 @@ metrics ship in the trust-root spine.)_
 
 | Metric ID | Definition / threshold | Source + locator | Status |
 |---|---|---|---|
-| _(none yet)_ | | | |
+| `driving_path` | Driving-path trace: relationship free float == 0 marks a binding ("driving") link; back-trace from the project-finish driving sink | SSI-SLACK (Steelray/SSI driving-slack methodology) | cited (practice); page-anchor source-pending |
 
 ## Foundational semantics cited by the trust-root spine
 
