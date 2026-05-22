@@ -16,6 +16,8 @@ Sheets
 * **DCMA** -- header row + 14 rows in id order. Columns: Metric ID, Name, Status,
   Measured, Threshold, Direction, Extension?, Source, Detail. Numeric measured /
   threshold are written as numbers; None -> blank.
+* **Earned Value** -- header row + the SPI / SPI(t) indices (SKIPPED rows when the
+  schedule carries no earned-value data; never fabricated).
 * **Findings** -- one row per failing metric, or a "no failing metrics" note.
 
 CUI / LAW 1: no schedule data leaves the machine; all writes are local. The
@@ -56,6 +58,18 @@ _DCMA_HEADERS: list[str] = [
     "Threshold",
     "Direction",
     "Extension?",
+    "Source",
+    "Detail",
+]
+
+# Earned-value indices are never extensions, so no "Extension?" column.
+_EV_HEADERS: list[str] = [
+    "Metric ID",
+    "Name",
+    "Status",
+    "Measured",
+    "Threshold",
+    "Direction",
     "Source",
     "Detail",
 ]
@@ -175,6 +189,39 @@ def _build_dcma_sheet(ws: Worksheet, analysis: ScheduleAnalysis) -> None:
     _autofit_columns(ws)
 
 
+def _build_ev_sheet(ws: Worksheet, analysis: ScheduleAnalysis) -> None:
+    """Earned-value indices (SPI / SPI(t)); SKIPPED rows when EV data is absent."""
+    _add_cui_banner(ws, "A1:H1")
+
+    for col, header in enumerate(_EV_HEADERS, start=1):
+        cell = ws.cell(row=2, column=col, value=header)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = _header_fill()
+
+    if not analysis.performance_indices:
+        ws.cell(row=3, column=1, value="no earned-value indices").font = Font(italic=True)
+        _autofit_columns(ws)
+        return
+
+    for r_idx, metric in enumerate(analysis.performance_indices, start=3):
+        values: list[object] = [
+            metric.metric_id,
+            metric.name,
+            str(metric.status),
+            metric.measured,  # float or None -> blank when None
+            metric.threshold,
+            "" if metric.direction is None else str(metric.direction),
+            metric.source,
+            metric.detail,
+        ]
+        for col, val in enumerate(values, start=1):
+            cell = ws.cell(row=r_idx, column=col, value=val)
+            if col == 3:
+                cell.fill = _status_fill(metric.status)
+
+    _autofit_columns(ws)
+
+
 def _build_findings_sheet(ws: Worksheet, analysis: ScheduleAnalysis) -> None:
     _add_cui_banner(ws, "A1:B1")
 
@@ -199,6 +246,7 @@ def build_excel_workbook(analysis: ScheduleAnalysis) -> Workbook:
     summary.title = "Summary"
     _build_summary_sheet(summary, analysis)
     _build_dcma_sheet(wb.create_sheet("DCMA"), analysis)
+    _build_ev_sheet(wb.create_sheet("Earned Value"), analysis)
     _build_findings_sheet(wb.create_sheet("Findings"), analysis)
     return wb
 

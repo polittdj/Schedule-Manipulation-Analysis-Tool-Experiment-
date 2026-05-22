@@ -16,8 +16,10 @@ Document structure
 3. Executive metrics section: project finish (offset + working days), health
    score, critical path ids, driving chain ids, CPM error (if present).
 4. DCMA 14-Point table: header row + one row per metric in id order.
-5. Findings list: one bullet per failing metric, or a "no failing metrics" note.
-6. If any metric has ``is_extension=True``, a footnote distinguishing those rows
+5. Earned-Value Indices table: SPI / SPI(t) (SKIPPED rows when the schedule
+   carries no earned-value data; never fabricated).
+6. Findings list: one bullet per failing metric, or a "no failing metrics" note.
+7. If any metric has ``is_extension=True``, a footnote distinguishing those rows
    as tool-original extensions (parity-honesty).
 
 CUI / LAW 1: no schedule data leaves the machine; all writes are to the
@@ -61,6 +63,18 @@ _DCMA_HEADERS: list[str] = [
     "Threshold",
     "Direction",
     "Extension?",
+    "Source",
+    "Detail",
+]
+
+# Earned-value indices are never extensions, so no "Extension?" column.
+_EV_HEADERS: list[str] = [
+    "Metric ID",
+    "Name",
+    "Status",
+    "Measured",
+    "Threshold",
+    "Direction",
     "Source",
     "Detail",
 ]
@@ -174,6 +188,49 @@ def _add_dcma_table(doc: Document, analysis: ScheduleAnalysis) -> None:
                 _set_cell_bg(cell, _status_color(metric.status))
 
 
+def _add_ev_table(doc: Document, analysis: ScheduleAnalysis) -> None:
+    """Earned-value indices (SPI / SPI(t)); SKIPPED rows when EV data is absent."""
+    doc.add_heading("Earned-Value Indices (SPI / SPI(t))", level=1)
+    if not analysis.performance_indices:
+        run = doc.add_paragraph().add_run("no earned-value indices")
+        run.italic = True
+        return
+
+    table = doc.add_table(rows=1 + len(analysis.performance_indices), cols=len(_EV_HEADERS))
+    table.style = "Table Grid"
+
+    hdr_row = table.rows[0]
+    for col_idx, header in enumerate(_EV_HEADERS):
+        cell = hdr_row.cells[col_idx]
+        para = cell.paragraphs[0]
+        para.clear()
+        run = para.add_run(header)
+        run.bold = True
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        _set_cell_bg(cell, "4472C4")
+
+    for row_idx, metric in enumerate(analysis.performance_indices, start=1):
+        measured_str = "" if metric.measured is None else f"{metric.measured}"
+        threshold_str = "" if metric.threshold is None else f"{metric.threshold}"
+        direction_str = "" if metric.direction is None else str(metric.direction)
+        values = [
+            metric.metric_id,
+            metric.name,
+            str(metric.status),
+            measured_str,
+            threshold_str,
+            direction_str,
+            metric.source,
+            metric.detail,
+        ]
+        row = table.rows[row_idx]
+        for col_idx, val in enumerate(values):
+            cell = row.cells[col_idx]
+            cell.text = val
+            if col_idx == 2:
+                _set_cell_bg(cell, _status_color(metric.status))
+
+
 def _add_findings(doc: Document, analysis: ScheduleAnalysis) -> None:
     doc.add_heading("Findings (Failing Metrics)", level=1)
     if analysis.findings:
@@ -205,6 +262,7 @@ def build_word_document(analysis: ScheduleAnalysis) -> Document:
     _add_cui_banner(doc)
     _add_executive_metrics(doc, analysis)
     _add_dcma_table(doc, analysis)
+    _add_ev_table(doc, analysis)
     _add_findings(doc, analysis)
     _add_extension_footnote(doc, analysis)
     return doc

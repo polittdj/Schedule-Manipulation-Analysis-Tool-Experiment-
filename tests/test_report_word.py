@@ -81,6 +81,34 @@ def _lead_schedule() -> Schedule:
     )
 
 
+def _ev_schedule() -> Schedule:
+    """Schedule carrying earned-value data; SPI = 0.75 (behind), status @ baseline finish."""
+    d7, d8 = dt.datetime(2025, 1, 7, 8), dt.datetime(2025, 1, 8, 8)
+    return Schedule(
+        name="ev",
+        project_start=_START,
+        status_date=d8,
+        tasks=(
+            _task(
+                1,
+                480,
+                percent_complete=100.0,
+                baseline_start=_START,
+                baseline_finish=d7,
+                budgeted_cost=100.0,
+            ),
+            _task(
+                2,
+                480,
+                percent_complete=50.0,
+                baseline_start=d7,
+                baseline_finish=d8,
+                budgeted_cost=100.0,
+            ),
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helper: extract all text from a Document as one big string
 # ---------------------------------------------------------------------------
@@ -162,6 +190,24 @@ def test_build_word_document_dcma_table_contains_metric_ids() -> None:
     full = _full_text(doc)
     assert "DCMA-01" in full
     assert "DCMA-14" in full
+
+
+def test_build_word_document_renders_earned_value() -> None:
+    """The earned-value table renders SPI/SPI(t) and the 0.75 measured value."""
+    analysis = analyze_schedule(_ev_schedule())
+    spi = next(m for m in analysis.performance_indices if m.metric_id == "SPI")
+    assert spi.measured == pytest.approx(0.75)  # pre-condition
+    full = _full_text(build_word_document(analysis))
+    assert "SPI" in full
+    assert "SPI(t)" in full
+    assert "0.75" in full
+
+
+def test_build_word_document_earned_value_skipped_without_data() -> None:
+    """With no EV data the earned-value rows still render, marked SKIPPED."""
+    full = _full_text(build_word_document(analyze_schedule(_clean_schedule())))
+    assert "Earned-Value Indices" in full
+    assert "SKIPPED" in full
 
 
 def test_build_word_document_findings_present() -> None:

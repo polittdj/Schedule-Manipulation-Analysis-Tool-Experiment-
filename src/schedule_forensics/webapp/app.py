@@ -283,6 +283,40 @@ _TEMPLATE = """<!DOCTYPE html>
     </p>
   </div>
 
+  <!-- Earned-value indices -->
+  <div class="card">
+    <h3>Earned-Value Indices (SPI / SPI(t))</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Measured</th>
+          <th>Threshold</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in analysis.performance_indices %}
+        <tr>
+          <td>{{ m.metric_id }}</td>
+          <td>{{ m.name }}</td>
+          <td><span class="status-{{ m.status }}">{{ m.status }}</span></td>
+          <td>{{ "%.4f"|format(m.measured) if m.measured is not none else "" }}</td>
+          <td>{{ m.threshold if m.threshold is not none else "" }}</td>
+          <td style="font-size:11px;color:#555;">{{ m.source }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="font-size:11px;color:#777;margin-top:6px;">
+      Earned-value indices need schedule data with budgeted cost + baseline dates;
+      otherwise they are <strong>SKIPPED</strong> (never fabricated). The 0.95
+      threshold is a common EVM management level, not a DCMA-14 number.
+    </p>
+  </div>
+
   <!-- Download reports + wipe -->
   <div class="card">
     <h3>Reports &amp; Session Control</h3>

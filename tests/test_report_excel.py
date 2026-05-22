@@ -86,6 +86,34 @@ def _lead_schedule() -> Schedule:
     )
 
 
+def _ev_schedule() -> Schedule:
+    """Schedule carrying earned-value data; SPI = 0.75 (behind), status @ baseline finish."""
+    d7, d8 = dt.datetime(2025, 1, 7, 8), dt.datetime(2025, 1, 8, 8)
+    return Schedule(
+        name="ev",
+        project_start=_START,
+        status_date=d8,
+        tasks=(
+            _task(
+                1,
+                480,
+                percent_complete=100.0,
+                baseline_start=_START,
+                baseline_finish=d7,
+                budgeted_cost=100.0,
+            ),
+            _task(
+                2,
+                480,
+                percent_complete=50.0,
+                baseline_start=d7,
+                baseline_finish=d8,
+                budgeted_cost=100.0,
+            ),
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helper: collect all non-None cell values from a worksheet as a flat list of
 # strings, so we can search for the CUI banner substring.
@@ -110,10 +138,41 @@ def _sheet_has_cui(ws: object) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def test_build_excel_workbook_has_three_sheets() -> None:
+def test_build_excel_workbook_has_expected_sheets() -> None:
     analysis = analyze_schedule(_clean_schedule())
     wb = build_excel_workbook(analysis)
-    assert wb.sheetnames == ["Summary", "DCMA", "Findings"]
+    assert wb.sheetnames == ["Summary", "DCMA", "Earned Value", "Findings"]
+
+
+def test_earned_value_sheet_renders_spi_through_disk(tmp_path: pathlib.Path) -> None:
+    """The Earned Value sheet round-trips SPI/SPI(t) ids and the 0.75 measured value."""
+    analysis = analyze_schedule(_ev_schedule())
+    spi = next(m for m in analysis.performance_indices if m.metric_id == "SPI")
+    assert spi.status is MetricStatus.FAIL  # pre-condition: 0.75 < 0.95
+    assert spi.measured == pytest.approx(0.75)
+
+    path = tmp_path / "ev.xlsx"
+    build_excel_report(analysis, path)
+    wb = openpyxl.load_workbook(path)
+    ws = wb["Earned Value"]
+    text_vals = _all_text_values(ws)
+    assert "SPI" in text_vals
+    assert "SPI(t)" in text_vals
+    numeric_vals = [
+        cell.value for row in ws.iter_rows() for cell in row if isinstance(cell.value, int | float)
+    ]
+    assert any(abs(float(v) - 0.75) < 1e-9 for v in numeric_vals), (
+        f"SPI 0.75 not found in Earned Value sheet numerics: {numeric_vals}"
+    )
+    assert _sheet_has_cui(ws)
+
+
+def test_earned_value_sheet_skipped_without_ev_data() -> None:
+    """A schedule with no EV data still renders SPI/SPI(t) rows, marked SKIPPED."""
+    wb = build_excel_workbook(analyze_schedule(_clean_schedule()))
+    text_vals = _all_text_values(wb["Earned Value"])
+    assert "SPI" in text_vals
+    assert "SKIPPED" in text_vals
 
 
 def test_workbook_summary_contains_project_finish_minutes() -> None:

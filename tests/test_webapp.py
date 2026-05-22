@@ -172,6 +172,54 @@ def test_analyze_json_stores_state(client: object) -> None:
     assert _STATE["schedule"] is not None
 
 
+def test_dashboard_renders_earned_value_section(client: object) -> None:
+    """The dashboard shows the earned-value indices (SKIPPED for a non-EV schedule)."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    resp = c.post("/analyze", data={"json_text": _minimal_schedule().model_dump_json()})
+    body = resp.data.decode()
+    assert "Earned-Value Indices" in body
+    assert "SPI(t)" in body
+    assert "SKIPPED" in body  # no budget/baseline data -> never fabricated
+
+
+def test_dashboard_renders_earned_value_number(client: object) -> None:
+    """With earned-value data, the dashboard shows the computed SPI (0.7500)."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    d7, d8 = dt.datetime(2025, 1, 7, 8), dt.datetime(2025, 1, 8, 8)
+    sched = Schedule(
+        name="EV UI",
+        project_start=_START,
+        status_date=d8,
+        tasks=(
+            Task(
+                unique_id=1,
+                name="A",
+                duration_minutes=480,
+                percent_complete=100.0,
+                baseline_start=_START,
+                baseline_finish=d7,
+                budgeted_cost=100.0,
+            ),
+            Task(
+                unique_id=2,
+                name="B",
+                duration_minutes=480,
+                percent_complete=50.0,
+                baseline_start=d7,
+                baseline_finish=d8,
+                budgeted_cost=100.0,
+            ),
+        ),
+    )
+    resp = c.post("/analyze", data={"json_text": sched.model_dump_json()})
+    body = resp.data.decode()
+    assert "0.7500" in body  # SPI = 150/200, formatted to 4 dp in the template
+
+
 # ── /analyze with MS Project XML fixture ─────────────────────────────────────
 
 
