@@ -45,6 +45,7 @@ metrics ship in the trust-root spine.)_
 | `DCMA-06` High Float | ≤ 5% of incomplete tasks with total float > 44 working days | DCMA-EDWARDS / DCMA-WINTER 14-pt M6 | value canonical; page-anchor source-pending |
 | `DCMA-07` Negative Float | == 0% of tasks with negative total float | DCMA-EDWARDS / DCMA-WINTER 14-pt M7 | value canonical; page-anchor source-pending |
 | `DCMA-08` High Duration | ≤ 5% of incomplete tasks with duration > 44 working days | DCMA-EDWARDS / DCMA-WINTER 14-pt M8 | value canonical; page-anchor source-pending |
+| `sra` | Monte-Carlo SRA: BetaPERT 3-point sampling → P50/P80/P95 + per-task criticality index (default spread O=0.75D, M=D, P=1.5D) | SRA-MONTE-CARLO / BETA-PERT (Acumen Fuse Risk; Primavera Risk Analysis) | method cited (practice); default spread is a **tool default**, not parity; page-anchor source-pending |
 
 ## Foundational semantics cited by the trust-root spine
 
