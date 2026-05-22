@@ -115,7 +115,7 @@ integration step owns merges.
 | `qa-auditor` | (read-only; writes nothing in `src/`) |
 | `security-cui-auditor` | (read-only; **veto** over any merge with a data-egress path) |
 | `fidelity-parity-auditor` | (read-only; diffs output vs golden fixtures) |
-| `integration-merger` | merges feature branches; resolves conflicts |
+| `integration-merger` | merges feature branches; resolves conflicts; owns `src/schedule_forensics/analysis.py` (single-schedule compose layer) |
 
 Each module owns its own test file. A conflict between two modules over one file
 means the partition was wrong — fix the boundary, don't paper over it.
