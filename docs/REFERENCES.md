@@ -37,6 +37,14 @@ metrics ship in the trust-root spine.)_
 | Metric ID | Definition / threshold | Source + locator | Status |
 |---|---|---|---|
 | `driving_path` | Driving-path trace: relationship free float == 0 marks a binding ("driving") link; back-trace from the project-finish driving sink | SSI-SLACK (Steelray/SSI driving-slack methodology) | cited (practice); page-anchor source-pending |
+| `DCMA-01` Missing Logic | ≤ 5% of tasks lack a predecessor or successor | DCMA-EDWARDS / DCMA-WINTER 14-pt M1 | value canonical; page-anchor source-pending |
+| `DCMA-02` Leads | == 0 relationships with negative lag | DCMA-EDWARDS / DCMA-WINTER 14-pt M2 | value canonical; page-anchor source-pending |
+| `DCMA-03` Lags | ≤ 5% of relationships carry positive lag | DCMA-EDWARDS / DCMA-WINTER 14-pt M3 | value canonical; page-anchor source-pending |
+| `DCMA-04` Relationship Types | ≥ 90% of relationships are Finish-to-Start | DCMA-EDWARDS / DCMA-WINTER 14-pt M4 | value canonical; page-anchor source-pending |
+| `DCMA-05` Hard Constraints | ≤ 5% of tasks carry a hard constraint (MSO/MFO/SNLT/FNLT) | DCMA-EDWARDS / DCMA-WINTER 14-pt M5 | value canonical; page-anchor source-pending |
+| `DCMA-06` High Float | ≤ 5% of incomplete tasks with total float > 44 working days | DCMA-EDWARDS / DCMA-WINTER 14-pt M6 | value canonical; page-anchor source-pending |
+| `DCMA-07` Negative Float | == 0% of tasks with negative total float | DCMA-EDWARDS / DCMA-WINTER 14-pt M7 | value canonical; page-anchor source-pending |
+| `DCMA-08` High Duration | ≤ 5% of incomplete tasks with duration > 44 working days | DCMA-EDWARDS / DCMA-WINTER 14-pt M8 | value canonical; page-anchor source-pending |
 
 ## Foundational semantics cited by the trust-root spine
 
