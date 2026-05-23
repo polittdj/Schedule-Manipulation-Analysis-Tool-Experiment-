@@ -51,6 +51,49 @@ def _lead() -> Schedule:
     )
 
 
+def _earned_value() -> Schedule:
+    """Behind-schedule EV inputs: SPI = 0.75 at the status date (baseline finish)."""
+    d7, d8 = dt.datetime(2025, 1, 7, 8), dt.datetime(2025, 1, 8, 8)
+    return Schedule(
+        name="ev",
+        project_start=_START,
+        status_date=d8,
+        tasks=(
+            Task(
+                unique_id=1,
+                name="A",
+                duration_minutes=480,
+                percent_complete=100.0,
+                baseline_start=_START,
+                baseline_finish=d7,
+                budgeted_cost=100.0,
+            ),
+            Task(
+                unique_id=2,
+                name="B",
+                duration_minutes=480,
+                percent_complete=50.0,
+                baseline_start=d7,
+                baseline_finish=d8,
+                budgeted_cost=100.0,
+            ),
+        ),
+    )
+
+
+def test_narrative_includes_earned_value_when_runnable() -> None:
+    summary = generate_executive_summary(analyze_schedule(_earned_value()))
+    assert "Earned-value performance" in summary
+    assert "SPI 0.75" in summary  # traces to the computed index (H-DRIFT-1)
+
+
+def test_narrative_omits_earned_value_when_skipped() -> None:
+    # A plain schedule has no EV data -> SPI/SPI(t) SKIPPED -> the EV line is omitted
+    # (no noise), never a fabricated value.
+    summary = generate_executive_summary(analyze_schedule(_clean()))
+    assert "Earned-value performance" not in summary
+
+
 def _analysis(health_score: float | None, dcma: tuple[MetricResult, ...] = ()) -> ScheduleAnalysis:
     return ScheduleAnalysis(
         project_finish=960,

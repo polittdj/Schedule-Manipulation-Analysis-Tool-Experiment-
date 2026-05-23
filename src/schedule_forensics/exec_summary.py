@@ -100,6 +100,19 @@ def build_narrative(analysis: ScheduleAnalysis) -> str:
             + "."
         )
 
+    # Earned-value indices (only when runnable; SKIPPED EV is omitted, not noise).
+    ev_values = [
+        f"{m.metric_id} {m.measured:.2f}"
+        for m in analysis.performance_indices
+        if m.status.value in ("PASS", "FAIL") and m.measured is not None
+    ]
+    if ev_values:
+        lines.append(
+            "Earned-value performance: "
+            + "; ".join(ev_values)
+            + " (1.0 = on plan; below 1.0 = behind schedule)."
+        )
+
     if analysis.findings:
         lines.append(
             f"Failing DCMA checks ({len(analysis.findings)}): " + ", ".join(analysis.findings) + "."
