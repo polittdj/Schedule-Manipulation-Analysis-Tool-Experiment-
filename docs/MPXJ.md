@@ -17,15 +17,31 @@ the tool is unaffected.
 
 ## Quick setup (recommended)
 
+**macOS / Linux:**
+
 ```sh
 bash tools/mpxj/setup.sh                  # needs Java (JDK >= 17) + Maven
 export SF_MPXJ_HOME="$PWD/tools/mpxj"      # the dir setup.sh populated
 ```
 
-That downloads MPXJ + dependencies into `tools/mpxj/lib`, compiles the converter
-into `tools/mpxj/classes`, and `SF_MPXJ_HOME` makes both the CLI and the **web UI**
-parse native `.mpp` / `.mpx` uploads. To have it ready in every session, set
-`SF_MPXJ_HOME` and run `setup.sh` from your environment's setup / SessionStart hook.
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\mpxj\setup.ps1   # needs Java (JDK >= 17) + Maven
+$env:SF_MPXJ_HOME = "$PWD\tools\mpxj"      # this PowerShell session
+setx SF_MPXJ_HOME "$PWD\tools\mpxj"         # persist for new sessions
+```
+
+Either script downloads MPXJ + dependencies into `tools/mpxj/lib`, compiles the
+converter into `tools/mpxj/classes`, and `SF_MPXJ_HOME` makes both the CLI and the
+**web UI** parse native `.mpp` / `.mpx` uploads. To have it ready in every session,
+set `SF_MPXJ_HOME` and run the setup script from your environment's setup /
+SessionStart hook (the one-click launchers read `SF_MPXJ_HOME` if you set it there).
+
+> **Windows users have a second option — no Java required.** If MS Project is
+> installed, you can read native `.mpp` through it via **COM automation** instead of
+> MPXJ: in the web UI's *Native .mpp / .mpx reader* choice, pick **MS Project**. See
+> ["Choosing the reader in the web UI"](#choosing-the-reader-in-the-web-ui) below.
 
 ## Manual setup (equivalent, verified with MPXJ 16.2.0, Java 21)
 
@@ -76,6 +92,32 @@ Then in Python:
 from schedule_forensics.importers.mpp_mpxj import parse_mpp
 schedule = parse_mpp("/path/to/project.mpp")   # -> schedule_forensics.schemas.Schedule
 ```
+
+## Choosing the reader in the web UI
+
+The upload form offers a **Native .mpp / .mpx reader** choice that applies only to
+those binary formats (`.xer` and MS Project XML ignore it):
+
+- **MPXJ (Java helper, cross-platform — default):** routes the upload through the
+  MPXJ subprocess configured above. Works on any OS with Java; requires the
+  `SF_MPXJ_*` setup. If MPXJ is not configured, the upload fails closed with an
+  actionable message (it does not silently fall back).
+- **MS Project (COM automation — Windows only):** drives your locally installed MS
+  Project to open the file and read it directly (no Java needed). Off-Windows, or
+  without MS Project / `pywin32`, this fails closed with a message pointing you back
+  to the MPXJ / XML path (`ComUnavailableError`). The COM reader opens the file
+  **read-only** and never modifies your source `.mpp` (CLAUDE.md COM gotcha 7).
+
+Both readers run **entirely locally** — no schedule data leaves the machine (LAW 1).
+The uploaded bytes are written to a private, auto-deleted temp file only for the
+duration of the parse (both readers need a real file path).
+
+> **Fidelity note (LAW 2):** the two readers can differ on edge cases (MPXJ's `.mpp`
+> reader is an independent re-implementation; COM uses MS Project's own engine). On
+> Windows with MS Project installed, **MS Project (COM) is the higher-fidelity
+> reference** for `.mpp`; MPXJ is the portable path everywhere else. The COM ↔ MPXJ
+> conformance check on a shared fixture is part of the user's local Windows
+> validation (it cannot run in CI — see docs/HAZARDS.md, H-NO-COM-HERE).
 
 ## Verifying the wiring
 

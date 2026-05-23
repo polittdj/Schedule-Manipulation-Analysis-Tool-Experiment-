@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from schedule_forensics.importers.com_msproject import ComUnavailableError
 from schedule_forensics.report_excel import CUI_NOTICE
 from schedule_forensics.schemas import Relation, Schedule, Task
 from schedule_forensics.webapp import DEFAULT_PORT, HOST, PORT_ENV_VAR, create_app, resolve_port
@@ -319,6 +320,135 @@ def test_analyze_mpp_without_mpxj_returns_clean_400(
     )
     assert resp.status_code == 400
     assert "MPXJ" in resp.data.decode()
+
+
+# ── native .mpp via the COM reader (Windows-only live; routing faked here) ────
+#
+# parse_mpp_via_com cannot run on Linux (no MS Project / win32com), so these tests
+# fake the module-level parse_mpp_via_com to prove the UI ROUTES the .mpp upload to
+# COM when the user selects it, falls back safely, and surfaces COM errors cleanly.
+# The pure COM->Schedule mapping itself is verified in tests/test_com_msproject.py.
+
+
+def _com_routed_schedule() -> Schedule:
+    """Schedule a faked COM reader returns; finish 2880 is a unique routing signal."""
+    return Schedule(
+        name="COM Routed",
+        project_start=_START,
+        status_date=_START,
+        tasks=(Task(unique_id=1, name="ComTask", duration_minutes=2880),),
+    )
+
+
+def test_form_shows_mpp_reader_choice(client: object) -> None:
+    """GET / offers both native-.mpp readers (MPXJ default + MS Project COM)."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    body = c.get("/").data.decode()
+    assert 'name="mpp_reader"' in body
+    assert 'value="mpxj"' in body
+    assert 'value="com"' in body
+    assert "MS Project" in body  # the COM option is labeled for the user
+
+
+def test_analyze_mpp_via_com_routes_to_com(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Selecting the COM reader routes a .mpp upload to parse_mpp_via_com (a temp path)."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    captured: dict[str, str] = {}
+
+    def fake_com(path: str, *, calendar: object = None) -> Schedule:
+        captured["path"] = str(path)
+        return _com_routed_schedule()
+
+    monkeypatch.setattr("schedule_forensics.webapp.app.parse_mpp_via_com", fake_com)
+    resp = c.post(
+        "/analyze",
+        data={
+            "schedule_files": (io.BytesIO(b"\xd0\xcf\x11\xe0fake-mpp"), "plan.mpp"),
+            "mpp_reader": "com",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    assert "2880" in resp.data.decode()  # the COM-routed schedule's unique finish
+    assert captured["path"].endswith(".mpp")  # COM was handed a real (temp) file path
+
+
+def test_analyze_mpp_com_unavailable_returns_clean_400(
+    client: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """COM chosen but unavailable (off-Windows) fails closed with an actionable 400."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+
+    def fake_com(path: str, *, calendar: object = None) -> Schedule:
+        raise ComUnavailableError(
+            "COM requires Windows + pywin32 + MS Project. Use the cross-platform "
+            "importers (MS Project XML / Primavera XER / MPXJ) instead."
+        )
+
+    monkeypatch.setattr("schedule_forensics.webapp.app.parse_mpp_via_com", fake_com)
+    resp = c.post(
+        "/analyze",
+        data={
+            "schedule_files": (io.BytesIO(b"fake"), "plan.mpp"),
+            "mpp_reader": "com",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "MPXJ" in resp.data.decode()  # the error points back at the cross-platform path
+
+
+def test_analyze_mpp_default_reader_uses_mpxj_not_com(
+    client: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no explicit choice, .mpp routes to MPXJ; COM is never invoked."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    monkeypatch.setenv("SF_MPXJ_CMD", _mpxj_stub_cmd(tmp_path))
+
+    def boom(path: str, *, calendar: object = None) -> Schedule:
+        raise AssertionError("COM must not be called for the default (MPXJ) reader")
+
+    monkeypatch.setattr("schedule_forensics.webapp.app.parse_mpp_via_com", boom)
+    resp = c.post(
+        "/analyze",
+        data={"schedule_files": (io.BytesIO(b"\xd0\xcf\x11\xe0fake-mpp"), "plan.mpp")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    assert "2400" in resp.data.decode()  # MSPDI fixture network via the stub MPXJ
+
+
+def test_analyze_mpp_invalid_reader_falls_back_to_mpxj(
+    client: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tampered mpp_reader value falls back to MPXJ (fail safe), never to COM/error."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    monkeypatch.setenv("SF_MPXJ_CMD", _mpxj_stub_cmd(tmp_path))
+
+    def boom(path: str, *, calendar: object = None) -> Schedule:
+        raise AssertionError("an invalid reader must fall back to MPXJ, not COM")
+
+    monkeypatch.setattr("schedule_forensics.webapp.app.parse_mpp_via_com", boom)
+    resp = c.post(
+        "/analyze",
+        data={
+            "schedule_files": (io.BytesIO(b"\xd0\xcf\x11\xe0fake-mpp"), "plan.mpp"),
+            "mpp_reader": "bogus",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    assert "2400" in resp.data.decode()
 
 
 def test_analyze_multiple_files_shows_comparative_cei(client: object) -> None:

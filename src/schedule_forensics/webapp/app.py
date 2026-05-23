@@ -32,6 +32,11 @@ from flask.typing import ResponseReturnValue
 from schedule_forensics.analysis import ScheduleAnalysis, analyze_schedule
 from schedule_forensics.cei import CEIError, compute_cei
 from schedule_forensics.exec_summary import generate_executive_summary, health_band
+from schedule_forensics.importers.com_msproject import (
+    ComImporterError,
+    ComUnavailableError,
+    parse_mpp_via_com,
+)
 from schedule_forensics.importers.mpp_mpxj import ImporterError as MpxjImporterError
 from schedule_forensics.importers.mpp_mpxj import parse_mpp
 from schedule_forensics.importers.msp_xml import ImporterError as MspImporterError
@@ -50,6 +55,14 @@ HOST: str = "127.0.0.1"
 # ── Port configuration (host is fixed; only the port may vary) ────────────────
 DEFAULT_PORT: int = 5000
 PORT_ENV_VAR: str = "SF_PORT"
+
+# ── Native .mpp/.mpx reader choice (user-selectable in the upload form) ───────
+# "mpxj" -> cross-platform MPXJ subprocess (default); "com" -> MS Project COM
+# automation (Windows-only). Only these two are valid; anything else falls back
+# to MPXJ (fail safe, never crash on a tampered form value).
+MPP_READER_MPXJ: str = "mpxj"
+MPP_READER_COM: str = "com"
+_VALID_MPP_READERS: frozenset[str] = frozenset({MPP_READER_MPXJ, MPP_READER_COM})
 
 # ── In-memory state ───────────────────────────────────────────────────────────
 # No schedule data is persisted to disk for the TEXT formats (XML/XER/JSON) -- they
@@ -188,11 +201,27 @@ _TEMPLATE = """<!DOCTYPE html>
           (select multiple status-dated versions for a comparative CEI view):</label>
         <input type="file" id="schedule_files" name="schedule_files"
                accept=".mpp,.mpx,.xer,.xml" multiple>
-        <p style="font-size:11px;color:#777;margin-top:4px;">
-          Native .mpp parsing uses a local MPXJ helper (see docs/MPXJ.md). All
-          processing is local; nothing leaves this machine (LAW 1).
-        </p>
       </div>
+      <fieldset
+        style="margin-bottom:14px;border:1px solid #d0d8e0;border-radius:4px;padding:10px 14px;">
+        <legend style="font-weight:bold;color:#333;padding:0 6px;">
+          Native .mpp / .mpx reader</legend>
+        <label style="font-weight:normal;display:block;margin-bottom:4px;">
+          <input type="radio" name="mpp_reader" value="{{ mpxj_reader }}"
+                 {{ "checked" if mpp_reader != com_reader else "" }}>
+          <strong>MPXJ</strong> (Java helper, cross-platform &mdash; default; see docs/MPXJ.md)
+        </label>
+        <label style="font-weight:normal;display:block;">
+          <input type="radio" name="mpp_reader" value="{{ com_reader }}"
+                 {{ "checked" if mpp_reader == com_reader else "" }}>
+          <strong>MS Project</strong> (COM automation &mdash; Windows + installed MS Project only)
+        </label>
+        <p style="font-size:11px;color:#777;margin-top:6px;">
+          This choice applies only to native .mpp / .mpx files; .xer and MS Project XML
+          ignore it. MPXJ runs a local Java converter; MS Project (COM) drives your
+          installed MS Project. Both are fully local &mdash; nothing leaves this machine (LAW 1).
+        </p>
+      </fieldset>
       <div style="margin-bottom:14px;">
         <label for="json_text">Or paste Schedule JSON:</label>
         <textarea id="json_text" name="json_text" rows="6"
@@ -432,13 +461,16 @@ _TEMPLATE = """<!DOCTYPE html>
 </html>"""
 
 
-def _parse_upload(upload: Any) -> Schedule:
+def _parse_upload(upload: Any, *, mpp_reader: str = MPP_READER_MPXJ) -> Schedule:
     """Parse one uploaded file into a :class:`Schedule`, routed by extension.
 
-    ``.mpp`` / ``.mpx`` (binary) -> MPXJ subprocess, which needs a real path, so the
-    bytes are written to a private, auto-deleted temp dir (LAW 1: local + ephemeral;
-    nothing leaves the machine). ``.xer`` -> Primavera importer; anything else ->
-    MS Project XML (MSPDI). Raises the importer's ImporterError on failure.
+    ``.mpp`` / ``.mpx`` (binary) need a real file path, so the bytes are written to a
+    private, auto-deleted temp dir (LAW 1: local + ephemeral; nothing leaves the
+    machine) and read by the chosen native reader: ``mpp_reader="mpxj"`` (the
+    cross-platform MPXJ subprocess, default) or ``"com"`` (MS Project COM automation,
+    Windows-only). ``.xer`` -> Primavera importer; anything else -> MS Project XML
+    (MSPDI). The ``mpp_reader`` choice is ignored for the text formats. Raises the
+    relevant importer error on failure.
     """
     name = (upload.filename or "").lower()
     if name.endswith((".mpp", ".mpx")):
@@ -448,6 +480,8 @@ def _parse_upload(upload: Any) -> Schedule:
             tmp_path = os.path.join(tmp, f"schedule{suffix}")
             with open(tmp_path, "wb") as fh:
                 fh.write(data)
+            if mpp_reader == MPP_READER_COM:
+                return parse_mpp_via_com(tmp_path)
             return parse_mpp(tmp_path)
     text = upload.read().decode("utf-8", errors="replace")
     if name.endswith(".xer"):
@@ -497,7 +531,11 @@ def _store_results(parsed: list[tuple[str, Schedule]]) -> None:
 
 
 def _render_page(
-    *, error: str | None = None, json_prefill: str | None = None, status: int = 200
+    *,
+    error: str | None = None,
+    json_prefill: str | None = None,
+    mpp_reader: str = MPP_READER_MPXJ,
+    status: int = 200,
 ) -> ResponseReturnValue:
     """Render the page from current _STATE (single dashboard + comparative section)."""
     analysis: ScheduleAnalysis | None = _STATE.get("analysis")
@@ -511,6 +549,9 @@ def _render_page(
         band=band,
         exec_summary=summary,
         json_prefill=json_prefill,
+        mpp_reader=mpp_reader,
+        mpxj_reader=MPP_READER_MPXJ,
+        com_reader=MPP_READER_COM,
         versions=_STATE.get("versions") or [],
         cei_periods=_STATE.get("cei") or (),
         cei_note=_STATE.get("cei_note"),
@@ -546,6 +587,10 @@ def create_app() -> Flask:
             if f and f.filename
         ]
         json_text = (request.form.get("json_text") or "").strip()
+        # Native .mpp/.mpx reader choice; unknown values fall back to MPXJ (fail safe).
+        mpp_reader = (request.form.get("mpp_reader") or MPP_READER_MPXJ).strip().lower()
+        if mpp_reader not in _VALID_MPP_READERS:
+            mpp_reader = MPP_READER_MPXJ
 
         parsed: list[tuple[str, Schedule]] = []
         error: str | None = None
@@ -554,8 +599,18 @@ def create_app() -> Flask:
             for upload in uploads:
                 name = upload.filename or "uploaded file"
                 try:
-                    parsed.append((name, _parse_upload(upload)))
-                except (MspImporterError, XerImporterError, MpxjImporterError) as exc:
+                    parsed.append((name, _parse_upload(upload, mpp_reader=mpp_reader)))
+                except ComUnavailableError as exc:
+                    # COM chosen but unavailable (e.g. not on Windows / no MS Project):
+                    # surface its actionable message and point back at MPXJ / XML.
+                    error = f"{name}: {exc}"
+                    break
+                except (
+                    MspImporterError,
+                    XerImporterError,
+                    MpxjImporterError,
+                    ComImporterError,
+                ) as exc:
                     error = f"{name}: {exc}"
                     break
                 except Exception as exc:  # noqa: BLE001
@@ -579,10 +634,12 @@ def create_app() -> Flask:
             error = "No input provided. Upload .mpp / .xer / MS Project XML file(s), or paste JSON."
 
         if error is not None:
-            return _render_page(error=error, json_prefill=json_text or None, status=400)
+            return _render_page(
+                error=error, json_prefill=json_text or None, mpp_reader=mpp_reader, status=400
+            )
 
         _store_results(parsed)
-        return _render_page()
+        return _render_page(mpp_reader=mpp_reader)
 
     @app.post("/wipe")
     def wipe() -> ResponseReturnValue:
