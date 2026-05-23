@@ -8,7 +8,8 @@ LAW 1 (Data Sovereignty):
 
 Routes:
   GET  /           -- CUI banner + upload form; renders dashboard if state held.
-  POST /analyze    -- Parse uploaded XML file or pasted JSON; run analysis; store.
+  POST /analyze    -- Parse uploaded MS Project XML / Primavera XER file (routed by
+                      extension) or pasted JSON; run analysis; store.
   POST /wipe       -- Destroy all in-memory state; redirect to /.
   GET  /report.xlsx -- Stream Excel report for current analysis (or redirect /).
   GET  /report.docx -- Stream Word report for current analysis (or redirect /).
@@ -29,7 +30,10 @@ from flask.typing import ResponseReturnValue
 
 from schedule_forensics.analysis import ScheduleAnalysis, analyze_schedule
 from schedule_forensics.exec_summary import generate_executive_summary, health_band
-from schedule_forensics.importers.msp_xml import ImporterError, parse_msp_xml_string
+from schedule_forensics.importers.msp_xml import ImporterError as MspImporterError
+from schedule_forensics.importers.msp_xml import parse_msp_xml_string
+from schedule_forensics.importers.xer import ImporterError as XerImporterError
+from schedule_forensics.importers.xer import parse_xer_string
 from schedule_forensics.report_excel import CUI_NOTICE, build_excel_workbook
 from schedule_forensics.report_word import build_word_document
 from schedule_forensics.schemas import Schedule
@@ -159,8 +163,8 @@ _TEMPLATE = """<!DOCTYPE html>
     <h2>Upload Schedule</h2>
     <form method="post" action="/analyze" enctype="multipart/form-data">
       <div style="margin-bottom:14px;">
-        <label for="xml_file">MS Project XML file (.xml / MSPDI):</label>
-        <input type="file" id="xml_file" name="xml_file" accept=".xml">
+        <label for="xml_file">Schedule file (MS Project .xml or Primavera .xer):</label>
+        <input type="file" id="xml_file" name="xml_file" accept=".xml,.xer">
       </div>
       <div style="margin-bottom:14px;">
         <label for="json_text">Or paste Schedule JSON:</label>
@@ -372,23 +376,28 @@ def create_app() -> Flask:
 
     @app.post("/analyze")
     def analyze() -> ResponseReturnValue:
-        """Parse the uploaded XML or pasted JSON and run analysis; store in _STATE."""
-        xml_file = request.files.get("xml_file")
+        """Parse the uploaded schedule file or pasted JSON, run analysis; store in _STATE.
+
+        A ``.xer`` filename routes to the Primavera XER importer; anything else is
+        treated as MS Project XML (MSPDI).
+        """
+        upload = request.files.get("xml_file")
         json_text = (request.form.get("json_text") or "").strip()
 
         schedule: Schedule | None = None
         error: str | None = None
 
-        # Prefer XML file upload over pasted JSON when both are present.
-        if xml_file and xml_file.filename:
-            raw_bytes = xml_file.read()
+        # Prefer a file upload over pasted JSON when both are present.
+        if upload and upload.filename:
+            text = upload.read().decode("utf-8", errors="replace")
+            is_xer = upload.filename.lower().endswith(".xer")
             try:
-                xml_str = raw_bytes.decode("utf-8", errors="replace")
-                schedule = parse_msp_xml_string(xml_str)
-            except ImporterError as exc:
-                error = f"MS Project XML parse error: {exc}"
+                schedule = parse_xer_string(text) if is_xer else parse_msp_xml_string(text)
+            except (MspImporterError, XerImporterError) as exc:
+                kind = "Primavera XER" if is_xer else "MS Project XML"
+                error = f"{kind} parse error: {exc}"
             except Exception as exc:  # noqa: BLE001
-                error = f"Unexpected error reading XML: {exc}"
+                error = f"Unexpected error reading the schedule file: {exc}"
         elif json_text:
             try:
                 schedule = Schedule.model_validate_json(json_text)

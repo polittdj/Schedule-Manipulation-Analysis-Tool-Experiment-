@@ -31,6 +31,7 @@ from schedule_forensics.webapp.app import _STATE, _clear_state
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 _FIXTURE_XML = Path(__file__).parent / "fixtures" / "msp_xml" / "simple_network.xml"
+_FIXTURE_XER = Path(__file__).parent / "fixtures" / "xer" / "simple_network.xer"
 
 _START = dt.datetime(2025, 1, 6, 8, 0, 0)
 
@@ -239,6 +240,38 @@ def test_analyze_xml_fixture_returns_dashboard(client: object) -> None:
     assert any(band in body for band in ("GREEN", "YELLOW", "RED"))
     # simple_network.xml has project finish 2400 (A 960 + B 1440 FS chain)
     assert "2400" in body
+
+
+def test_analyze_xer_fixture_returns_dashboard(client: object) -> None:
+    """POST /analyze with a .xer upload routes to the XER importer and renders the dashboard."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    xer_bytes = _FIXTURE_XER.read_bytes()
+    resp = c.post(
+        "/analyze",
+        data={"xml_file": (io.BytesIO(xer_bytes), "simple_network.xer", "text/plain")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert any(band in body for band in ("GREEN", "YELLOW", "RED"))
+    # The XER fixture mirrors the MSPDI one: project finish 2400.
+    assert "2400" in body
+
+
+def test_analyze_malformed_xer_returns_400(client: object) -> None:
+    """A .xer upload that is not valid XER returns a clean 400 (XER parse error)."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    resp = c.post(
+        "/analyze",
+        data={"xml_file": (io.BytesIO(b"not an xer file"), "bad.xer", "text/plain")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "XER" in resp.data.decode()
 
 
 # ── /analyze with garbage input → 400 ────────────────────────────────────────
