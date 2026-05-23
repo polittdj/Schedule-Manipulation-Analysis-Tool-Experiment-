@@ -28,7 +28,6 @@ from schedule_forensics.importers.mpp_mpxj import (
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 MSPDI_FIXTURE = _FIXTURES / "msp_xml" / "simple_network.xml"
-XER_FIXTURE = _FIXTURES / "xer" / "simple_network.xer"
 
 
 def _stub_cmd(tmp_path: Path, body: str) -> str:
@@ -144,6 +143,10 @@ def test_bad_converter_output_raises(tmp_path: Path, monkeypatch: pytest.MonkeyP
     reason="set SF_MPXJ_INTEGRATION=1 (with SF_MPXJ_CMD/JAR) to run against real MPXJ",
 )
 def test_real_mpxj_reads_a_fixture() -> None:
-    # When real MPXJ is wired, it should read the XER fixture into the same network.
-    schedule = parse_mpp(XER_FIXTURE)
+    # When real MPXJ is wired, it reads a real schedule file and writes MSPDI that
+    # our parser recovers. MSPDI is used as the input because MPXJ's reader sniffs
+    # the format and accepts it cleanly on any platform (no binary .mpp needed).
+    schedule = parse_mpp(MSPDI_FIXTURE)
     assert {t.unique_id for t in schedule.tasks} == {1, 2, 3, 4}
+    assert schedule.task_by_id(1).duration_minutes == 960  # fidelity through the real pipeline
+    assert schedule.task_by_id(4).is_milestone is True
