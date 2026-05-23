@@ -22,7 +22,8 @@ from schedule_forensics.inference import (
     DEFAULT_CLASSIFICATION,
     Classification,
     InferenceBackend,
-    NullInferenceBackend,
+    InferenceError,
+    backend_from_env,
     select_backend,
 )
 
@@ -135,9 +136,17 @@ def generate_executive_summary(
 
     The factual narrative is built locally and deterministically; ``backend`` may
     only rephrase it. ``select_backend`` enforces that a non-local backend cannot
-    be used under CUI (the default classification) -- it raises instead. The
-    default backend is :class:`NullInferenceBackend` (local, verbatim).
+    be used under CUI (the default classification) -- it raises instead. When no
+    ``backend`` is given the default comes from :func:`backend_from_env` -- a local
+    OpenAI-compatible model when ``SF_LLM_BASE_URL`` is set (loopback only), else the
+    deterministic NullInferenceBackend. If a configured local model is unreachable
+    the summary falls back to the deterministic narrative (it never errors out the
+    caller), since that narrative is the authoritative factual text either way.
     """
-    backend = backend if backend is not None else NullInferenceBackend()
-    select_backend(classification, backend)  # fail closed before any data is used
-    return backend.summarize(build_narrative(analysis))
+    chosen = backend if backend is not None else backend_from_env()
+    select_backend(classification, chosen)  # fail closed before any data is used
+    narrative = build_narrative(analysis)
+    try:
+        return chosen.summarize(narrative)
+    except InferenceError:
+        return narrative
