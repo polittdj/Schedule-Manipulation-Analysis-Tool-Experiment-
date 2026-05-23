@@ -204,6 +204,9 @@ def _build_task(row: dict[str, str]) -> Task:
         percent_complete=_parse_pct(row.get("phys_complete_pct")),
         actual_start=_parse_xer_datetime(row.get("act_start_date")),
         actual_finish=_parse_xer_datetime(row.get("act_end_date")),
+        # Forecast finish for CEI: P6 early finish (source-pending -- which P6 field
+        # maps to the displayed Finish varies; fixtures assert nothing depending on it).
+        finish=_parse_xer_datetime(row.get("early_end_date")),
     )
 
 

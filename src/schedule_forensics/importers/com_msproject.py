@@ -265,6 +265,7 @@ def _map_task(task: object) -> Task | None:
         percent_complete=_to_percent(_getattr_or_none(task, "PercentComplete")),
         actual_start=_to_datetime(_getattr_or_none(task, "ActualStart")),
         actual_finish=_to_datetime(_getattr_or_none(task, "ActualFinish")),
+        finish=_to_datetime(_getattr_or_none(task, "Finish")),  # forecast finish (CEI)
         baseline_start=_to_datetime(_getattr_or_none(task, "BaselineStart")),
         baseline_finish=_to_datetime(_getattr_or_none(task, "BaselineFinish")),
         budgeted_cost=_to_cost(_getattr_or_none(task, "BaselineCost")),

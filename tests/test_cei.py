@@ -15,6 +15,7 @@ import datetime as dt
 import pytest
 
 from schedule_forensics.cei import THRESHOLD_CEI, CEIError, compute_cei
+from schedule_forensics.importers.msp_xml import parse_msp_xml_string
 from schedule_forensics.metrics_common import Direction, MetricStatus
 from schedule_forensics.schemas import Schedule, Task
 from schedule_forensics.version_matcher import VersionMatchError
@@ -204,6 +205,28 @@ def test_detail_documents_tool_original_capture() -> None:
     current = _version(_P1, [_task(1, finish=_IN, actual_finish=_IN)])
     (period,) = compute_cei([prior, current])
     assert "tool-original capture" in period.detail.lower()
+
+
+def test_cei_end_to_end_from_mspdi_imports() -> None:
+    # Prove the chain: MSPDI import populates finish + actual_finish + status_date,
+    # and CEI computes over the imported versions. Task forecast to finish 2/15,
+    # incomplete at 1/31, actually finished 2/15 -> CEI 1/1 = 1.0.
+    def _ver(status: str, actual: str | None) -> str:
+        actual_el = f"<ActualFinish>{actual}</ActualFinish>" if actual else ""
+        return (
+            '<Project xmlns="http://schemas.microsoft.com/project">'
+            f"<Name>v</Name><StartDate>2025-01-01T08:00:00</StartDate>"
+            f"<StatusDate>{status}</StatusDate><Tasks>"
+            "<Task><UID>1</UID><Name>A</Name><Duration>PT8H0M0S</Duration>"
+            f"<Finish>2025-02-15T17:00:00</Finish>{actual_el}</Task>"
+            "</Tasks></Project>"
+        )
+
+    prior = parse_msp_xml_string(_ver("2025-01-31T17:00:00", None))
+    current = parse_msp_xml_string(_ver("2025-02-28T17:00:00", "2025-02-15T17:00:00"))
+    (period,) = compute_cei([prior, current])
+    assert (period.denominator, period.numerator) == (1, 1)
+    assert period.cei == pytest.approx(1.0)
 
 
 def test_actual_finish_perturbation_changes_numerator() -> None:

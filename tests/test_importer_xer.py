@@ -302,6 +302,26 @@ def test_short_row_pads_missing_trailing_fields() -> None:
     assert task.constraint_type is ConstraintType.ASAP
 
 
+def test_early_end_date_maps_to_finish() -> None:
+    # P6 early_end_date -> Task.finish (forecast finish, for CEI; source-pending mapping).
+    doc = _xer_doc(
+        _table("PROJECT", _PROJECT_FIELDS, [["1", "P", "2025-01-06 08:00"]]),
+        _table(
+            "TASK",
+            [
+                "task_id",
+                "proj_id",
+                "task_name",
+                "task_type",
+                "target_drtn_hr_cnt",
+                "early_end_date",
+            ],
+            [["1", "1", "A", "TT_Task", "8", "2025-02-15 17:00"]],
+        ),
+    )
+    assert parse_xer_string(doc).tasks[0].finish == dt.datetime(2025, 2, 15, 17)
+
+
 def test_start_milestone_type_is_milestone() -> None:
     doc = _xer_doc(
         _table("PROJECT", _PROJECT_FIELDS, [["1", "P", "2025-01-06 08:00"]]),

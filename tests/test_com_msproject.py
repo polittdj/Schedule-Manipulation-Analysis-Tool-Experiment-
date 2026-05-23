@@ -276,6 +276,16 @@ def test_dependency_type_perturbation_changes_mapping(code: int, expected: Relat
     assert schedule.relations[0].type is expected
 
 
+def test_finish_field_is_read() -> None:
+    # COM Task.Finish -> Task.finish (forecast finish, for CEI). The fake has no
+    # Finish attr by default (-> None tolerated); set it to prove it is read.
+    proj = _build_fake_project()
+    by_uid = {t.UniqueID: t for t in proj.Tasks if t is not None}
+    by_uid[1].Finish = dt.datetime(2025, 6, 30, 17)
+    schedule = schedule_from_com_project(proj)
+    assert {t.unique_id: t for t in schedule.tasks}[1].finish == dt.datetime(2025, 6, 30, 17)
+
+
 def test_none_fields_tolerated_everywhere() -> None:
     # Commandment 5: a task with essentially all-None optional fields must still
     # map (defaults applied), not crash.

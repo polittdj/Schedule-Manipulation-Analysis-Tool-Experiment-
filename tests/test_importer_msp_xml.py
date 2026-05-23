@@ -95,6 +95,20 @@ def test_duplicate_uid_raises_importer_error() -> None:
         parse_msp_xml_string(xml)
 
 
+def test_finish_and_actual_finish_are_read() -> None:
+    # Forecast finish (for CEI) and actual finish are read from MSPDI.
+    xml = (
+        '<Project xmlns="http://schemas.microsoft.com/project">'
+        "<Name>x</Name><StartDate>2025-01-06T08:00:00</StartDate>"
+        "<Tasks><Task><UID>1</UID><Name>A</Name><Duration>PT8H0M0S</Duration>"
+        "<Finish>2025-02-15T17:00:00</Finish>"
+        "<ActualFinish>2025-02-10T17:00:00</ActualFinish></Task></Tasks></Project>"
+    )
+    task = parse_msp_xml_string(xml).tasks[0]
+    assert task.finish == dt.datetime(2025, 2, 15, 17)
+    assert task.actual_finish == dt.datetime(2025, 2, 10, 17)
+
+
 def test_duration_mutation_is_actually_read() -> None:
     # Mutation discipline: editing the XML duration changes the parsed value,
     # proving the importer reads the field rather than returning a constant.

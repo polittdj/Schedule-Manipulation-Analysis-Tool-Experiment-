@@ -137,6 +137,8 @@ def _parse_task(task_el: ET.Element) -> Task | None:
         constraint_type=constraint_type,
         constraint_date=_parse_datetime(_child_text(task_el, "ConstraintDate")),
         deadline=_parse_datetime(_child_text(task_el, "Deadline")),
+        finish=_parse_datetime(_child_text(task_el, "Finish")),  # forecast finish (CEI)
+        actual_finish=_parse_datetime(_child_text(task_el, "ActualFinish")),
     )
 
 
