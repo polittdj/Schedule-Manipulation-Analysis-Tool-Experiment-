@@ -13,13 +13,13 @@
 git checkout claude/charming-cerf-iddZv && git pull
 python3 -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e . && pip install -r requirements-dev.txt
-ruff check . && ruff format --check . && mypy && pytest      # expect: all clean, ~321 pass / 3 skip
+ruff check . && ruff format --check . && mypy && pytest      # expect: all clean, ~363 pass / 3 skip
 python -m schedule_forensics.webapp                # serves http://127.0.0.1:5000 (--port / SF_PORT)
 ```
 
 - **Branch:** `claude/charming-cerf-iddZv` (develop here only; never push elsewhere
   without explicit permission). **Draft PR #24 → main** (do not merge without
-  permission). **Schema FROZEN at v1.1.0.** Latest work + open items:
+  permission). **Schema FROZEN at v1.2.0.** Latest work + open items:
   `PHASE-COMPLETE-9.md`.
 - **Green bar before every commit:** `ruff check`, `ruff format --check`,
   `mypy` (strict on `src/`), `pytest` — all clean. CI runs the same on Python
@@ -55,16 +55,18 @@ JPype.** Do not "restore" COM-as-trust-root from the original master directive.
 Pipeline runs end-to-end: **MS Project XML / JSON `Schedule` → CPM → full DCMA-14 +
 driving-path + SRA + multi-version diff/float-trend → composition + health score →
 Excel/Word reports → executive summary → localhost UI.** Now also: XER ingestion +
-earned-value SPI/SPI(t). 24 source modules, ~321 tests. Module map
+earned-value SPI/SPI(t), CEI, and COM ingestion. 26 source modules, ~363 tests. Module map
 (`src/schedule_forensics/`):
 
 | Module | Role |
 |---|---|
-| `schemas.py` | **FROZEN v1.1.0** Pydantic model (`Schedule/Task/Relation/Calendar`); strict, immutable, integrity-guarded; UniqueID-only identity. v1.1.0 added `Task.baseline_start` + `Task.budgeted_cost` (EV basis). `SCHEMA_VERSION` + `tests/test_schema_freeze.py` enforce change-control. |
+| `schemas.py` | **FROZEN v1.2.0** Pydantic model (`Schedule/Task/Relation/Calendar`); strict, immutable, integrity-guarded; UniqueID-only identity. v1.1.0 added `Task.baseline_start`+`Task.budgeted_cost` (EV); v1.2.0 added `Task.finish` (forecast finish, CEI). `SCHEMA_VERSION` + `tests/test_schema_freeze.py` enforce change-control. |
 | `importers/msp_xml.py` | Pure-Python MSPDI (MS Project XML) importer. Dup-UID → `ImporterError`. |
 | `importers/xer.py` | Pure-Python Primavera P6 XER importer (`%T/%F/%R/%E`); UniqueID = `task_id`; multi-project → majority project; constraint codes source-pending. |
 | `importers/mpp_mpxj.py` | Native `.mpp` via MPXJ **subprocess** (never JPype); `SF_MPXJ_CMD`/`SF_MPXJ_JAR` → MSPDI → `parse_msp_xml`; killable; fail-closed. See `docs/MPXJ.md`. |
-| `performance_indices.py` | Earned-value **SPI** (EV/PV) + **SPI(t)** (Lipke earned schedule); SKIP without EV data; **CEI deferred source-pending**. Not in the DCMA health score. |
+| `importers/com_msproject.py` | **Windows-only** MS Project COM importer; pure `schedule_from_com_project` mapping (Linux-tested with a fake), `parse_mpp_via_com` driver (guarded import, headless, ReadOnly). Real-`.mpp` validation is Windows-local. |
+| `performance_indices.py` | Earned-value **SPI** (EV/PV) + **SPI(t)** (Lipke earned schedule); SKIP without EV data. Not in the DCMA health score. |
+| `cei.py` | **CEI** (Current Execution Index, PASEG 10.4.5): per-period finished/forecast-to-finish count ratio over ≥2 status-dated versions; capped at 1.0; multi-version library fn (like `diff_engine`). |
 | `version_matcher.py` | Orders versions by absolute `status_date`; UniqueID-keyed added/deleted/matched. |
 | `cpm.py` | CPM forward/backward on an **integer working-minute axis** (480 min = 1 day). All link types FS/SS/FF/SF + lag; SNET/FNET/SNLT/FNLT + deadlines; total/free float incl. negative; critical path = `total_float<=0`. **ALAP/MSO/MFO raise `CPMError` (fail closed)** pending live-MSP validation. `datetime_to_offset` converts dates. |
 | `metrics_common.py` | Shared metric contract: `MetricResult`, `Threshold` (single-source, cited), `Direction`, typed `Offender`, `evaluate`/`skipped` (SKIPPED never fabricates). |
@@ -88,7 +90,7 @@ Phase reports with full detail: `PHASE-COMPLETE-0.md`, `-1.md`, `-2.md`, `-5.md`
 
 ## 4. Frozen decisions & conventions (do not silently change)
 
-- **Schema is FROZEN at v1.1.0.** Any field add/remove ⇒ bump `SCHEMA_VERSION` AND
+- **Schema is FROZEN at v1.2.0.** Any field add/remove ⇒ bump `SCHEMA_VERSION` AND
   update `tests/test_schema_freeze.py` in the same change (the guard test fails
   otherwise). This is deliberate change-control.
 - **UniqueID is the sole cross-version identity key.** Never row `ID`, never name.
@@ -110,8 +112,14 @@ DONE (this session; see `PHASE-COMPLETE-9.md`):
   `task_id`, preds/lags mapped, cited; synthetic fixture + cross-importer parity.
 - ✅ **Earned-value SPI + SPI(t)** (`performance_indices.py`) behind the deliberate
   **schema v1.1.0** bump (`Task.baseline_start` + `Task.budgeted_cost`). Wired into
-  `analysis.py` (kept out of the DCMA health score) + Excel/Word/UI. **CEI is
-  deferred source-pending** — no single citable definition; not faked (LAW 2).
+  `analysis.py` (kept out of the DCMA health score) + Excel/Word/UI + exec summary.
+- ✅ **CEI** (Current Execution Index, `cei.py`) behind the deliberate **schema
+  v1.2.0** bump (`Task.finish`). Per-period finished/forecast-to-finish count ratio
+  (PASEG 10.4.5 / NDIA IPMD); ≥2 status-dated versions (else "insufficient data");
+  unmatched task = did-not-finish + diagnostic; capped at 1.0; 0.95 threshold
+  source-pending/VERIFY; auto-snapshot = tool-original capture. All importers
+  populate `Task.finish`. Multi-version library fn (like `diff_engine`), not in the
+  single-schedule UI. 18 tests incl. end-to-end from MSPDI.
 - ✅ **Phase-9 hardening rounds 1–3** — fixed the importer error contract (dup
   UID/task_id → `ImporterError`); +17 edge-case tests incl. end-to-end XER≡MSPDI
   full-analysis parity; XER wired into the UI upload; 3 clean runs.
@@ -133,8 +141,11 @@ REMAINING (all environment- or input-constrained):
    `.mpp` upload into the webapp once MPXJ is a standard server-side dependency.
 3. **Golden-file parity harness** (needs the user to supply Acumen/SSI/MSP outputs
    for a known schedule); live-MS Project validation on real `.mpp` (Windows-local).
-4. **CEI**: pin a citable definition (+ likely an `actual_cost` schema field)
-   before implementing. Continue the "+5 edge-case tests, 3 clean runs" loop.
+4. **CEI real-data validation**: confirm the program's CEI threshold (0.95 is the
+   common gate but source-pending — NDIA prefers a >75th-percentile trend) and the
+   XER `early_end_date`→`finish` mapping against real exports. Consider surfacing
+   the multi-version metrics (CEI, `diff_engine`, `float_analysis`) in a comparative
+   UI/report view — they are library-only today (the UI is single-schedule).
 
 **HUMAN-IN-LOOP (needs the user, do not attempt to wire alone): local Ollama model
 setup** (Phase-7 checkpoint). `OllamaBackend.summarize` is the wiring point and
