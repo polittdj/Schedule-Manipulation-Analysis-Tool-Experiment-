@@ -18,6 +18,8 @@ from __future__ import annotations
 import datetime as dt
 import io
 import json
+import shlex
+import sys
 from collections.abc import Generator
 from pathlib import Path
 
@@ -272,6 +274,84 @@ def test_analyze_malformed_xer_returns_400(client: object) -> None:
     )
     assert resp.status_code == 400
     assert "XER" in resp.data.decode()
+
+
+# ── native .mpp upload (routed to MPXJ; hermetic stub converter) ──────────────
+
+
+def _mpxj_stub_cmd(tmp_path: Path) -> str:
+    """A stub 'MPXJ' converter: ignore the .mpp input, write the MSPDI fixture out."""
+    stub = tmp_path / "stub_mpxj.py"
+    stub.write_text(f"import shutil, sys\nshutil.copyfile({str(_FIXTURE_XML)!r}, sys.argv[2])\n")
+    return f"{shlex.quote(sys.executable)} {shlex.quote(str(stub))} {{input}} {{output}}"
+
+
+def test_analyze_mpp_upload_via_mpxj(
+    client: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A .mpp upload is written to a temp file, parsed via MPXJ, and analyzed."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    monkeypatch.setenv("SF_MPXJ_CMD", _mpxj_stub_cmd(tmp_path))
+    resp = c.post(
+        "/analyze",
+        data={"schedule_files": (io.BytesIO(b"\xd0\xcf\x11\xe0fake-mpp"), "plan.mpp")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    assert "2400" in resp.data.decode()  # MSPDI fixture network, via the stub MPXJ
+
+
+def test_analyze_mpp_without_mpxj_returns_clean_400(
+    client: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A .mpp upload with no MPXJ configured fails closed with an actionable 400."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    for var in ("SF_MPXJ_CMD", "SF_MPXJ_JAR", "SF_MPXJ_HOME"):
+        monkeypatch.delenv(var, raising=False)
+    resp = c.post(
+        "/analyze",
+        data={"schedule_files": (io.BytesIO(b"fake"), "plan.mpp")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "MPXJ" in resp.data.decode()
+
+
+def test_analyze_multiple_files_shows_comparative_cei(client: object) -> None:
+    """Two status-dated versions render the comparative CEI section."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+
+    def _ver(status: str, actual: str | None) -> bytes:
+        actual_el = f"<ActualFinish>{actual}</ActualFinish>" if actual else ""
+        return (
+            '<Project xmlns="http://schemas.microsoft.com/project">'
+            f"<Name>v</Name><StartDate>2025-01-01T08:00:00</StartDate>"
+            f"<StatusDate>{status}</StatusDate><Tasks>"
+            "<Task><UID>1</UID><Name>A</Name><Duration>PT8H0M0S</Duration>"
+            f"<Finish>2025-02-15T17:00:00</Finish>{actual_el}</Task></Tasks></Project>"
+        ).encode()
+
+    resp = c.post(
+        "/analyze",
+        data={
+            "schedule_files": [
+                (io.BytesIO(_ver("2025-01-31T17:00:00", None)), "v1.xml"),
+                (io.BytesIO(_ver("2025-02-28T17:00:00", "2025-02-15T17:00:00")), "v2.xml"),
+            ]
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Comparative Analysis" in body
+    assert "Current Execution Index" in body
+    assert "1.00" in body  # CEI = 1 finished / 1 forecast-to-finish
 
 
 # ── /analyze with garbage input → 400 ────────────────────────────────────────

@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import io
 import os
+import tempfile
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -29,7 +30,10 @@ from flask import Flask, Response, redirect, render_template_string, request, se
 from flask.typing import ResponseReturnValue
 
 from schedule_forensics.analysis import ScheduleAnalysis, analyze_schedule
+from schedule_forensics.cei import CEIError, compute_cei
 from schedule_forensics.exec_summary import generate_executive_summary, health_band
+from schedule_forensics.importers.mpp_mpxj import ImporterError as MpxjImporterError
+from schedule_forensics.importers.mpp_mpxj import parse_mpp
 from schedule_forensics.importers.msp_xml import ImporterError as MspImporterError
 from schedule_forensics.importers.msp_xml import parse_msp_xml_string
 from schedule_forensics.importers.xer import ImporterError as XerImporterError
@@ -37,6 +41,7 @@ from schedule_forensics.importers.xer import parse_xer_string
 from schedule_forensics.report_excel import CUI_NOTICE, build_excel_workbook
 from schedule_forensics.report_word import build_word_document
 from schedule_forensics.schemas import Schedule
+from schedule_forensics.version_matcher import VersionMatchError
 
 # ── LAW 1 constant ────────────────────────────────────────────────────────────
 # HOST is fixed and intentionally NOT configurable: the server binds loopback only.
@@ -46,16 +51,31 @@ HOST: str = "127.0.0.1"
 DEFAULT_PORT: int = 5000
 PORT_ENV_VAR: str = "SF_PORT"
 
-# ── In-memory state (no disk writes) ─────────────────────────────────────────
-# Holds at most one Schedule + ScheduleAnalysis at a time.
-# Keys: "schedule" -> Schedule | None, "analysis" -> ScheduleAnalysis | None
-_STATE: dict[str, Any] = {"schedule": None, "analysis": None}
+# ── In-memory state ───────────────────────────────────────────────────────────
+# No schedule data is persisted to disk for the TEXT formats (XML/XER/JSON) -- they
+# stay in _STATE only. Native binary .mpp/.mpx uploads are the one exception: MPXJ
+# needs a real file path, so the bytes are written to a private, auto-deleted temp
+# dir for the duration of the parse (see _parse_upload). That is LOCAL and ephemeral
+# -- LAW 1 (no schedule data leaves the machine) is preserved.
+#   "schedule"/"analysis" -> the latest version (drives the single-schedule dashboard
+#   + report downloads); "versions" -> per-file summaries; "cei"/"cei_note" -> the
+#   multi-version comparative result.
+_STATE: dict[str, Any] = {
+    "schedule": None,
+    "analysis": None,
+    "versions": [],
+    "cei": (),
+    "cei_note": None,
+}
 
 
 def _clear_state() -> None:
     """Destroy all uploaded / parsed / derived state (used by /wipe)."""
     _STATE["schedule"] = None
     _STATE["analysis"] = None
+    _STATE["versions"] = []
+    _STATE["cei"] = ()
+    _STATE["cei_note"] = None
 
 
 # ── Inline HTML template (no external assets — LAW 1) ─────────────────────────
@@ -160,11 +180,18 @@ _TEMPLATE = """<!DOCTYPE html>
 
   <!-- Upload / Input form -->
   <div class="card">
-    <h2>Upload Schedule</h2>
+    <h2>Upload Schedule(s)</h2>
     <form method="post" action="/analyze" enctype="multipart/form-data">
       <div style="margin-bottom:14px;">
-        <label for="xml_file">Schedule file (MS Project .xml or Primavera .xer):</label>
-        <input type="file" id="xml_file" name="xml_file" accept=".xml,.xer">
+        <label for="schedule_files">Schedule file(s) &mdash; native MS Project
+          <strong>.mpp</strong>, .mpx, Primavera .xer, or MS Project XML
+          (select multiple status-dated versions for a comparative CEI view):</label>
+        <input type="file" id="schedule_files" name="schedule_files"
+               accept=".mpp,.mpx,.xer,.xml" multiple>
+        <p style="font-size:11px;color:#777;margin-top:4px;">
+          Native .mpp parsing uses a local MPXJ helper (see docs/MPXJ.md). All
+          processing is local; nothing leaves this machine (LAW 1).
+        </p>
       </div>
       <div style="margin-bottom:14px;">
         <label for="json_text">Or paste Schedule JSON:</label>
@@ -179,9 +206,68 @@ _TEMPLATE = """<!DOCTYPE html>
     </form>
   </div>
 
+  {% if versions and versions|length > 1 %}
+  <hr class="divider">
+  <h2>Comparative Analysis &mdash; {{ versions|length }} versions</h2>
+
+  <div class="card">
+    <h3>Uploaded Versions</h3>
+    <table>
+      <thead><tr><th>File</th><th>Status date</th><th>Health</th>
+        <th>Finish (working min)</th></tr></thead>
+      <tbody>
+        {% for v in versions %}
+        <tr>
+          <td>{{ v.name }}</td>
+          <td>{{ v.status_date }}</td>
+          <td><span class="band band-{{ v.band }}">{{ v.band }}</span></td>
+          <td>{{ v.finish if v.finish is not none else "n/a" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Current Execution Index (CEI) &mdash; per period</h3>
+    {% if cei_note %}
+      <div class="error-box">{{ cei_note }}</div>
+    {% endif %}
+    {% if cei_periods %}
+    <table>
+      <thead>
+        <tr><th>Period start</th><th>Period end</th><th>Forecast&#8209;to&#8209;finish</th>
+            <th>Finished</th><th>CEI</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for p in cei_periods %}
+        <tr>
+          <td>{{ p.period_start.date() }}</td>
+          <td>{{ p.period_end.date() }}</td>
+          <td>{{ p.denominator }}</td>
+          <td>{{ p.numerator }}</td>
+          <td>{{ "%.2f"|format(p.cei) if p.cei is not none else "N/A" }}</td>
+          <td><span class="status-{{ p.status }}">{{ p.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="font-size:11px;color:#777;margin-top:6px;">
+      CEI (PASEG 10.4.5): tasks finished &divide; tasks forecast to finish, per period;
+      &ge;0.95 gate (source-pending/VERIFY). The period-start snapshot is reconstructed
+      from the prior version (tool-original capture method).
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}{# end comparative #}
+
   {% if analysis %}
   <hr class="divider">
+  {% if versions and versions|length > 1 %}
+  <h2>Latest Version &mdash; Analysis Dashboard</h2>
+  {% else %}
   <h2>Analysis Dashboard</h2>
+  {% endif %}
 
   <!-- Health overview -->
   <div class="card">
@@ -346,6 +432,92 @@ _TEMPLATE = """<!DOCTYPE html>
 </html>"""
 
 
+def _parse_upload(upload: Any) -> Schedule:
+    """Parse one uploaded file into a :class:`Schedule`, routed by extension.
+
+    ``.mpp`` / ``.mpx`` (binary) -> MPXJ subprocess, which needs a real path, so the
+    bytes are written to a private, auto-deleted temp dir (LAW 1: local + ephemeral;
+    nothing leaves the machine). ``.xer`` -> Primavera importer; anything else ->
+    MS Project XML (MSPDI). Raises the importer's ImporterError on failure.
+    """
+    name = (upload.filename or "").lower()
+    if name.endswith((".mpp", ".mpx")):
+        data = upload.read()
+        suffix = os.path.splitext(name)[1] or ".mpp"
+        with tempfile.TemporaryDirectory(prefix="sf_upload_") as tmp:
+            tmp_path = os.path.join(tmp, f"schedule{suffix}")
+            with open(tmp_path, "wb") as fh:
+                fh.write(data)
+            return parse_mpp(tmp_path)
+    text = upload.read().decode("utf-8", errors="replace")
+    if name.endswith(".xer"):
+        return parse_xer_string(text)
+    return parse_msp_xml_string(text)
+
+
+def _latest_index(schedules: list[Schedule]) -> int:
+    """Index of the version with the latest ``status_date`` (fallback: last given)."""
+    best_idx = len(schedules) - 1
+    best_date = None
+    for idx, sched in enumerate(schedules):
+        if sched.status_date is not None and (best_date is None or sched.status_date > best_date):
+            best_date, best_idx = sched.status_date, idx
+    return best_idx
+
+
+def _compute_comparative(schedules: list[Schedule]) -> tuple[tuple[Any, ...], str | None]:
+    """CEI across >=2 versions; ``(periods, note)``. <2 versions -> no comparison."""
+    if len(schedules) < 2:
+        return (), None
+    try:
+        return compute_cei(schedules), None
+    except (CEIError, VersionMatchError) as exc:
+        return (), f"CEI not computed: {exc}"
+
+
+def _store_results(parsed: list[tuple[str, Schedule]]) -> None:
+    """Populate _STATE from the parsed (filename, Schedule) pairs."""
+    schedules = [sched for _, sched in parsed]
+    analyses = [analyze_schedule(sched) for sched in schedules]
+    latest = _latest_index(schedules)
+    _STATE["schedule"] = schedules[latest]
+    _STATE["analysis"] = analyses[latest]
+    _STATE["versions"] = [
+        {
+            "name": name,
+            "status_date": (sched.status_date.date().isoformat() if sched.status_date else "n/a"),
+            "band": health_band(analysis).value,
+            "finish": analysis.project_finish,
+        }
+        for (name, sched), analysis in zip(parsed, analyses, strict=True)
+    ]
+    cei_periods, cei_note = _compute_comparative(schedules)
+    _STATE["cei"] = cei_periods
+    _STATE["cei_note"] = cei_note
+
+
+def _render_page(
+    *, error: str | None = None, json_prefill: str | None = None, status: int = 200
+) -> ResponseReturnValue:
+    """Render the page from current _STATE (single dashboard + comparative section)."""
+    analysis: ScheduleAnalysis | None = _STATE.get("analysis")
+    band = health_band(analysis).value if analysis is not None else None
+    summary = generate_executive_summary(analysis) if analysis is not None else None
+    html = render_template_string(
+        _TEMPLATE,
+        cui_notice=CUI_NOTICE,
+        error=error,
+        analysis=analysis,
+        band=band,
+        exec_summary=summary,
+        json_prefill=json_prefill,
+        versions=_STATE.get("versions") or [],
+        cei_periods=_STATE.get("cei") or (),
+        cei_note=_STATE.get("cei_note"),
+    )
+    return (html, status) if status != 200 else html
+
+
 def create_app() -> Flask:
     """Flask application factory.
 
@@ -356,107 +528,61 @@ def create_app() -> Flask:
     app = Flask(__name__)
 
     @app.get("/")
-    def index() -> str:
+    def index() -> ResponseReturnValue:
         """Render the upload form and (if present) the analysis dashboard."""
-        analysis: ScheduleAnalysis | None = _STATE.get("analysis")
-        band_str: str | None = None
-        exec_summary: str | None = None
-        if analysis is not None:
-            band_str = health_band(analysis).value
-            exec_summary = generate_executive_summary(analysis)
-        return render_template_string(
-            _TEMPLATE,
-            cui_notice=CUI_NOTICE,
-            error=None,
-            analysis=analysis,
-            band=band_str,
-            exec_summary=exec_summary,
-            json_prefill=None,
-        )
+        return _render_page()
 
     @app.post("/analyze")
     def analyze() -> ResponseReturnValue:
-        """Parse the uploaded schedule file or pasted JSON, run analysis; store in _STATE.
+        """Parse the uploaded schedule file(s) or pasted JSON; analyze; store in _STATE.
 
-        A ``.xer`` filename routes to the Primavera XER importer; anything else is
-        treated as MS Project XML (MSPDI).
+        Accepts one or MORE files (``.mpp``/``.mpx`` via MPXJ, ``.xer``, MS Project
+        XML), routed by extension. Two or more status-dated versions also yield the
+        multi-version comparative view (CEI).
         """
-        upload = request.files.get("xml_file")
+        uploads = [
+            f
+            for f in [*request.files.getlist("schedule_files"), *request.files.getlist("xml_file")]
+            if f and f.filename
+        ]
         json_text = (request.form.get("json_text") or "").strip()
 
-        schedule: Schedule | None = None
+        parsed: list[tuple[str, Schedule]] = []
         error: str | None = None
 
-        # Prefer a file upload over pasted JSON when both are present.
-        if upload and upload.filename:
-            text = upload.read().decode("utf-8", errors="replace")
-            is_xer = upload.filename.lower().endswith(".xer")
-            try:
-                schedule = parse_xer_string(text) if is_xer else parse_msp_xml_string(text)
-            except (MspImporterError, XerImporterError) as exc:
-                kind = "Primavera XER" if is_xer else "MS Project XML"
-                error = f"{kind} parse error: {exc}"
-            except Exception as exc:  # noqa: BLE001
-                error = f"Unexpected error reading the schedule file: {exc}"
+        if uploads:
+            for upload in uploads:
+                name = upload.filename or "uploaded file"
+                try:
+                    parsed.append((name, _parse_upload(upload)))
+                except (MspImporterError, XerImporterError, MpxjImporterError) as exc:
+                    error = f"{name}: {exc}"
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    error = f"{name}: unexpected error reading the file: {exc}"
+                    break
         elif json_text:
             try:
-                schedule = Schedule.model_validate_json(json_text)
+                parsed.append(("pasted JSON", Schedule.model_validate_json(json_text)))
             except pydantic.ValidationError as exc:
-                # Surface pydantic errors concisely (no stack trace to user).
-                # exc.errors() returns ErrorDetails TypedDicts; access via str
-                # conversion to stay mypy-clean across pydantic versions.
+                # Surface pydantic errors concisely (no stack trace to the user).
                 raw_errors = exc.errors()
                 if raw_errors:
                     first = raw_errors[0]
                     loc = " -> ".join(str(x) for x in first["loc"])
-                    msg = str(first["msg"])
-                    error = f"JSON validation error at '{loc}': {msg}"
+                    error = f"JSON validation error at '{loc}': {first['msg']!s}"
                 else:
                     error = f"JSON validation error: {exc}"
             except Exception as exc:  # noqa: BLE001
                 error = f"Unexpected error reading JSON: {exc}"
         else:
-            error = "No input provided. Upload an XML file or paste a JSON schedule."
+            error = "No input provided. Upload .mpp / .xer / MS Project XML file(s), or paste JSON."
 
         if error is not None:
-            return (
-                render_template_string(
-                    _TEMPLATE,
-                    cui_notice=CUI_NOTICE,
-                    error=error,
-                    analysis=_STATE.get("analysis"),
-                    band=(
-                        health_band(_STATE["analysis"]).value
-                        if _STATE.get("analysis") is not None
-                        else None
-                    ),
-                    exec_summary=(
-                        generate_executive_summary(_STATE["analysis"])
-                        if _STATE.get("analysis") is not None
-                        else None
-                    ),
-                    json_prefill=json_text or None,
-                ),
-                400,
-            )
+            return _render_page(error=error, json_prefill=json_text or None, status=400)
 
-        # schedule is guaranteed non-None here (error is None)
-        assert schedule is not None
-        analysis = analyze_schedule(schedule)
-        _STATE["schedule"] = schedule
-        _STATE["analysis"] = analysis
-
-        band_str = health_band(analysis).value
-        exec_summary = generate_executive_summary(analysis)
-        return render_template_string(
-            _TEMPLATE,
-            cui_notice=CUI_NOTICE,
-            error=None,
-            analysis=analysis,
-            band=band_str,
-            exec_summary=exec_summary,
-            json_prefill=None,
-        )
+        _store_results(parsed)
+        return _render_page()
 
     @app.post("/wipe")
     def wipe() -> ResponseReturnValue:
