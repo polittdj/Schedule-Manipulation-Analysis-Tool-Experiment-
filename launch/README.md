@@ -18,11 +18,14 @@ Pick your OS:
 3. *(Optional icon image)* select the alias → **Get Info**, drag `icon.svg`
    (or a PNG of it) onto the icon well at the top-left.
 
-## Windows — `Schedule-Forensics.bat`
-1. Double-click `launch\Schedule-Forensics.bat`.
-2. To get a Desktop icon: right-click it → **Send to → Desktop (create shortcut)**.
-3. *(Optional icon image)* right-click the Desktop shortcut → **Properties →
-   Change Icon…** and point it at an `.ico` made from `icon.svg`.
+## Windows 11 — `Schedule-Forensics.bat`
+**Easiest (one-time):** double-click `launch\Install-Desktop-Shortcut.bat`. It puts
+a **Schedule Forensics** icon (using `icon.ico`) on your Desktop. After that, just
+double-click that Desktop icon to launch.
+
+*Manual alternative:* right-click `launch\Schedule-Forensics.bat` → **Send to →
+Desktop (create shortcut)** (then optionally **Properties → Change Icon…** →
+`launch\icon.ico`).
 
 ## Linux — `Schedule-Forensics.desktop`
 ```sh
