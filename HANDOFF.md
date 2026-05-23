@@ -13,13 +13,14 @@
 git checkout claude/charming-cerf-iddZv && git pull
 python3 -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e . && pip install -r requirements-dev.txt
-ruff check . && ruff format --check . && mypy && pytest      # expect: all clean, ~253 pass / 2 skip
-python -m schedule_forensics.webapp                # serves http://127.0.0.1:5000
+ruff check . && ruff format --check . && mypy && pytest      # expect: all clean, ~306 pass / 2 skip
+python -m schedule_forensics.webapp                # serves http://127.0.0.1:5000 (--port / SF_PORT)
 ```
 
 - **Branch:** `claude/charming-cerf-iddZv` (develop here only; never push elsewhere
   without explicit permission). **Draft PR #24 → main** (do not merge without
-  permission). **HEAD at handoff: `af9b702`.**
+  permission). **Schema FROZEN at v1.1.0.** Latest work + open items:
+  `PHASE-COMPLETE-9.md`.
 - **Green bar before every commit:** `ruff check`, `ruff format --check`,
   `mypy` (strict on `src/`), `pytest` — all clean. CI runs the same on Python
   3.11 + 3.13.
@@ -53,13 +54,16 @@ JPype.** Do not "restore" COM-as-trust-root from the original master directive.
 
 Pipeline runs end-to-end: **MS Project XML / JSON `Schedule` → CPM → full DCMA-14 +
 driving-path + SRA + multi-version diff/float-trend → composition + health score →
-Excel/Word reports → executive summary → localhost UI.** 21 source modules, ~253
-tests. Module map (`src/schedule_forensics/`):
+Excel/Word reports → executive summary → localhost UI.** Now also: XER ingestion +
+earned-value SPI/SPI(t). 23 source modules, ~306 tests. Module map
+(`src/schedule_forensics/`):
 
 | Module | Role |
 |---|---|
-| `schemas.py` | **FROZEN v1.0.0** Pydantic model (`Schedule/Task/Relation/Calendar`); strict, immutable, integrity-guarded; UniqueID-only identity. `SCHEMA_VERSION` + `tests/test_schema_freeze.py` enforce change-control. |
-| `importers/msp_xml.py` | Pure-Python MSPDI (MS Project XML) importer. |
+| `schemas.py` | **FROZEN v1.1.0** Pydantic model (`Schedule/Task/Relation/Calendar`); strict, immutable, integrity-guarded; UniqueID-only identity. v1.1.0 added `Task.baseline_start` + `Task.budgeted_cost` (EV basis). `SCHEMA_VERSION` + `tests/test_schema_freeze.py` enforce change-control. |
+| `importers/msp_xml.py` | Pure-Python MSPDI (MS Project XML) importer. Dup-UID → `ImporterError`. |
+| `importers/xer.py` | Pure-Python Primavera P6 XER importer (`%T/%F/%R/%E`); UniqueID = `task_id`; multi-project → majority project; constraint codes source-pending. |
+| `performance_indices.py` | Earned-value **SPI** (EV/PV) + **SPI(t)** (Lipke earned schedule); SKIP without EV data; **CEI deferred source-pending**. Not in the DCMA health score. |
 | `version_matcher.py` | Orders versions by absolute `status_date`; UniqueID-keyed added/deleted/matched. |
 | `cpm.py` | CPM forward/backward on an **integer working-minute axis** (480 min = 1 day). All link types FS/SS/FF/SF + lag; SNET/FNET/SNLT/FNLT + deadlines; total/free float incl. negative; critical path = `total_float<=0`. **ALAP/MSO/MFO raise `CPMError` (fail closed)** pending live-MSP validation. `datetime_to_offset` converts dates. |
 | `metrics_common.py` | Shared metric contract: `MetricResult`, `Threshold` (single-source, cited), `Direction`, typed `Offender`, `evaluate`/`skipped` (SKIPPED never fabricates). |
@@ -83,7 +87,7 @@ Phase reports with full detail: `PHASE-COMPLETE-0.md`, `-1.md`, `-2.md`, `-5.md`
 
 ## 4. Frozen decisions & conventions (do not silently change)
 
-- **Schema is FROZEN at v1.0.0.** Any field add/remove ⇒ bump `SCHEMA_VERSION` AND
+- **Schema is FROZEN at v1.1.0.** Any field add/remove ⇒ bump `SCHEMA_VERSION` AND
   update `tests/test_schema_freeze.py` in the same change (the guard test fails
   otherwise). This is deliberate change-control.
 - **UniqueID is the sole cross-version identity key.** Never row `ID`, never name.
@@ -98,27 +102,33 @@ Phase reports with full detail: `PHASE-COMPLETE-0.md`, `-1.md`, `-2.md`, `-5.md`
 
 ## 5. Next work (prioritized) — pick up here
 
-1. **(Tiny, user nearly asked) Make the UI port configurable** — env var
-   `SF_PORT` / `--port` in `webapp/app.py main()`; keep default 5000, host fixed
-   `127.0.0.1`. Add a test.
-2. **Primavera XER importer** (`importers/xer.py`, parser-author): pure-Python text
-   parser → `Schedule`; UniqueID = XER `task_id`; map XER preds/lags; cite source;
-   golden synthetic fixture + field-parity tests. No new schema.
-3. **Earned-value indices** (`performance_indices.py`): SPI (BCWP/BCWS), SPI(t)
-   earned-schedule, CEI. **Requires a deliberate schema v1.1.0 bump** to add
-   earned-value fields (e.g. `budgeted_cost`/`actual_cost` or work) — the freeze
-   guard will force the conscious bump. BEI is already done (DCMA-14); do NOT
-   duplicate. Do not fabricate EV from absent data.
-4. **MPXJ-as-subprocess** for native `.mpp` (`importers/mpp_mpxj.py`): invoke an
-   MPXJ JAR/CLI via `subprocess` (Java 21 present). **NEVER in-process JPype.**
-   Behind the importer interface; killable; tested against a fixture.
-5. **COM importer** (Windows-only): behind the importer interface; `skip`/`xfail`
-   off-Windows; a conformance test `COM output == MPXJ output` runnable only on
+DONE (this session; see `PHASE-COMPLETE-9.md`):
+- ✅ **UI port configurable** — `--port` / `SF_PORT` in `webapp/app.py`; host fixed
+  `127.0.0.1`; fail-closed on bad input; tested.
+- ✅ **Primavera XER importer** (`importers/xer.py`) — pure-Python, UniqueID =
+  `task_id`, preds/lags mapped, cited; synthetic fixture + cross-importer parity.
+- ✅ **Earned-value SPI + SPI(t)** (`performance_indices.py`) behind the deliberate
+  **schema v1.1.0** bump (`Task.baseline_start` + `Task.budgeted_cost`). Wired into
+  `analysis.py` (kept out of the DCMA health score) + Excel/Word/UI. **CEI is
+  deferred source-pending** — no single citable definition; not faked (LAW 2).
+- ✅ **Phase-9 hardening rounds 1–2** — fixed the importer error contract (dup
+  UID/task_id → `ImporterError`); +12 edge-case tests; 3 clean runs.
+
+REMAINING (all environment- or input-constrained — see PHASE-COMPLETE-9 §OPEN):
+1. **MPXJ-as-subprocess** for native `.mpp` (`importers/mpp_mpxj.py`): invoke an
+   MPXJ JAR/CLI via `subprocess` (Java 21 present; Maven reachable). **NEVER
+   in-process JPype.** Behind the importer interface; killable. **Caveat:** a true
+   binary `.mpp` fixture CANNOT be created on Linux (MPXJ reads but does not write
+   `.mpp`; no MS Project here) — the `.mpp` path is Windows-validated only; here it
+   can be exercised via MPXJ converting an `.mpx`/MSPDI fixture → MSPDI XML →
+   existing `parse_msp_xml`.
+2. **COM importer** (Windows-only): behind the importer interface; `skip`/`xfail`
+   off-Windows; conformance test `COM output == MPXJ output` runnable only on
    Windows. `scripts/validate_against_msp.py` is the (stub) harness.
-6. **Phase-9 hardening / §11 readiness:** golden-file parity harness (needs the
-   user to supply Acumen/SSI/MSP outputs for a known schedule); the
-   "+5 edge-case tests each round, 3 clean runs" loop; live-MS Project validation
-   on real `.mpp` (Windows-local — a user task).
+3. **Golden-file parity harness** (needs the user to supply Acumen/SSI/MSP outputs
+   for a known schedule); live-MS Project validation on real `.mpp` (Windows-local).
+4. **CEI**: pin a citable definition (+ likely an `actual_cost` schema field)
+   before implementing. Continue the "+5 edge-case tests, 3 clean runs" loop.
 
 **HUMAN-IN-LOOP (needs the user, do not attempt to wire alone): local Ollama model
 setup** (Phase-7 checkpoint). `OllamaBackend.summarize` is the wiring point and
