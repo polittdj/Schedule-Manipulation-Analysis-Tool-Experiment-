@@ -1,0 +1,21 @@
+# SYNTHETIC fixture (hand-authored). NOT real schedule data. See CLAUDE.md / LAW 1.
+# Mirrors tests/fixtures/msp_xml/simple_network.xml: A(16h) -> {B(24h), C(8h)} -> D(milestone).
+# Hand-computed working-minute offsets: A 0..960, B 960..2400, C 960..1440,
+# D milestone @ 2400. Critical path = A,B,D. Project finish offset = 2400.
+ERMHDR	8.4	2025-01-06	Project	admin	Administrator	dbxDatabaseNoName	Project Management	USD
+%T	PROJECT
+%F	proj_id	proj_short_name	plan_start_date	last_recalc_date
+%R	1	SAMPLE-A	2025-01-06 08:00	2025-01-20 17:00
+%T	TASK
+%F	task_id	proj_id	task_code	task_name	task_type	target_drtn_hr_cnt	cstr_type	cstr_date	phys_complete_pct
+%R	1	1	A1000	A - Foundation	TT_Task	16			0
+%R	2	1	A1010	B - Framing	TT_Task	24			0
+%R	3	1	A1020	C - Sitework	TT_Task	8			0
+%R	4	1	A1030	D - Substantial Completion	TT_FinMile	0			0
+%T	TASKPRED
+%F	task_pred_id	task_id	pred_task_id	proj_id	pred_proj_id	pred_type	lag_hr_cnt
+%R	1	2	1	1	1	PR_FS	0
+%R	2	3	1	1	1	PR_FS	0
+%R	3	4	2	1	1	PR_FS	0
+%R	4	4	3	1	1	PR_FS	0
+%E

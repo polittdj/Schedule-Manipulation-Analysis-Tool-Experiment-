@@ -1,4 +1,5 @@
+# Dev/CI dependencies (pinned). Install: pip install -r requirements-dev.txt
 -r requirements.txt
-mypy==2.1.0
 pytest==9.0.3
-ruff==0.15.13
+ruff==0.15.14
+mypy==2.1.0

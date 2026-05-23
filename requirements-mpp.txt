@@ -1,7 +1,0 @@
-# Optional: enables reading native MS Project .mpp files (and .xer/.mpx) via MPXJ.
-# Requires a Java runtime (JDK/JRE 17+) on the machine. Install with:
-#   pip install -r requirements-mpp.txt
-# Without these (or without Java), the tool still reads MS Project XML and Primavera .xer; for
-# a .mpp, use MS Project's File -> Save As -> XML and load the .xml.
-mpxj==16.2.0
-JPype1==1.7.1

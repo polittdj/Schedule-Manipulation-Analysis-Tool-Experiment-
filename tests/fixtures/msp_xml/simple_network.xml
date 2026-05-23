@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC fixture (hand-authored). NOT real schedule data. See CLAUDE.md / LAW 1.
+     Network: A(2d) -> {B(3d), C(1d)} -> D(milestone). Calendar = 480 working min/day.
+     Hand-computed offsets: A 0..960, B 960..2400, C 960..1440 (960 min slack),
+     D milestone @ 2400. Critical path = A,B,D. Project finish offset = 2400. -->
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Name>Forensic Sample A</Name>
+  <Title>Forensic Sample A</Title>
+  <StartDate>2025-01-06T08:00:00</StartDate>
+  <StatusDate>2025-01-20T17:00:00</StatusDate>
+  <Tasks>
+    <Task>
+      <UID>1</UID>
+      <Name>A - Foundation</Name>
+      <Duration>PT16H0M0S</Duration>
+      <Milestone>0</Milestone>
+      <Summary>0</Summary>
+      <ConstraintType>0</ConstraintType>
+    </Task>
+    <Task>
+      <UID>2</UID>
+      <Name>B - Framing</Name>
+      <Duration>PT24H0M0S</Duration>
+      <Milestone>0</Milestone>
+      <Summary>0</Summary>
+      <ConstraintType>0</ConstraintType>
+      <PredecessorLink>
+        <PredecessorUID>1</PredecessorUID>
+        <Type>1</Type>
+        <LinkLag>0</LinkLag>
+        <LagFormat>7</LagFormat>
+      </PredecessorLink>
+    </Task>
+    <Task>
+      <UID>3</UID>
+      <Name>C - Sitework</Name>
+      <Duration>PT8H0M0S</Duration>
+      <Milestone>0</Milestone>
+      <Summary>0</Summary>
+      <ConstraintType>0</ConstraintType>
+      <PredecessorLink>
+        <PredecessorUID>1</PredecessorUID>
+        <Type>1</Type>
+        <LinkLag>0</LinkLag>
+        <LagFormat>7</LagFormat>
+      </PredecessorLink>
+    </Task>
+    <Task>
+      <UID>4</UID>
+      <Name>D - Substantial Completion</Name>
+      <Duration>PT0H0M0S</Duration>
+      <Milestone>1</Milestone>
+      <Summary>0</Summary>
+      <ConstraintType>0</ConstraintType>
+      <PredecessorLink>
+        <PredecessorUID>2</PredecessorUID>
+        <Type>1</Type>
+        <LinkLag>0</LinkLag>
+        <LagFormat>7</LagFormat>
+      </PredecessorLink>
+      <PredecessorLink>
+        <PredecessorUID>3</PredecessorUID>
+        <Type>1</Type>
+        <LinkLag>0</LinkLag>
+        <LagFormat>7</LagFormat>
+      </PredecessorLink>
+    </Task>
+  </Tasks>
+</Project>

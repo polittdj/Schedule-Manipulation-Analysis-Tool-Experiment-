@@ -1,221 +1,170 @@
-"""M4: CPM engine known-answer tests (hand-computed) + calendar-math invariants.
+"""CPM engine tests against independently hand-computed expected values.
 
-Conventions: 8h/day (1 day = 480 min), Mon-Fri, no holidays. See docs/cpm-model.md.
+Every numeric expectation here is hand-derived (see the comments), never read
+back from the engine's own output -- that is what makes the suite a fidelity
+proof rather than a tautology (LAW 2 / H-VACUOUS-TEST). The calendar is the
+default 480 working minutes/day, so 1 day == 480 minutes.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import datetime as dt
+from collections.abc import Iterable
 
 import pytest
 
-from app.cpm import compute_cpm
-from app.cpm.calendar_math import (
-    add_working_minutes,
-    is_working_day,
-    minutes_to_working_days,
-    working_minutes_between,
-)
-from app.exceptions import CPMError
-from app.models import ConstraintType, RelationType, Schedule
-from tests.conftest import make_calendar, make_relation, make_schedule, make_task
+from schedule_forensics.cpm import CPMError, compute_cpm, offset_to_datetime
+from schedule_forensics.schemas import Calendar, Relation, Schedule, Task
 
-DAY = 480
+_START = dt.datetime(2025, 1, 6, 8)  # a Monday
 
 
-def _example_1() -> Schedule:
-    """A->B, A->C, B->D, C->D, D->E (all FS, lag 0). Durations: 2,3,2,4,1 days."""
-    tasks = (
-        make_task(1, duration_minutes=2 * DAY),
-        make_task(2, duration_minutes=3 * DAY),
-        make_task(3, duration_minutes=2 * DAY),
-        make_task(4, duration_minutes=4 * DAY),
-        make_task(5, duration_minutes=1 * DAY),
+def _sched(tasks: Iterable[Task], relations: Iterable[Relation] = ()) -> Schedule:
+    return Schedule(name="t", project_start=_START, tasks=tuple(tasks), relations=tuple(relations))
+
+
+def test_linear_chain_all_critical() -> None:
+    # A(2d) -> B(3d) -> C(1d): finishes at 960+1440+480 = 2880; whole chain critical.
+    schedule = _sched(
+        [
+            Task(unique_id=1, name="A", duration_minutes=960),
+            Task(unique_id=2, name="B", duration_minutes=1440),
+            Task(unique_id=3, name="C", duration_minutes=480),
+        ],
+        [
+            Relation(predecessor_id=1, successor_id=2),
+            Relation(predecessor_id=2, successor_id=3),
+        ],
     )
-    relations = (
-        make_relation(1, 2),
-        make_relation(1, 3),
-        make_relation(2, 4),
-        make_relation(3, 4),
-        make_relation(4, 5),
-    )
-    return make_schedule(tasks=tasks, relations=relations)
-
-
-def _example_2() -> Schedule:
-    """A->B SS+2d, B->C FF+1d. Durations: 4,6,5 days."""
-    tasks = (
-        make_task(1, duration_minutes=4 * DAY),
-        make_task(2, duration_minutes=6 * DAY),
-        make_task(3, duration_minutes=5 * DAY),
-    )
-    relations = (
-        make_relation(1, 2, relation_type=RelationType.SS, lag_minutes=2 * DAY),
-        make_relation(2, 3, relation_type=RelationType.FF, lag_minutes=1 * DAY),
-    )
-    return make_schedule(tasks=tasks, relations=relations)
-
-
-def test_example_1_merge_and_slack_branch() -> None:
-    result = compute_cpm(_example_1())
-    assert result.project_finish == 10 * DAY
-    a, b, c, d, e = (result.by_id(i) for i in (1, 2, 3, 4, 5))
-    assert (a.early_start, a.early_finish) == (0, 2 * DAY)
-    assert (b.early_start, b.early_finish) == (2 * DAY, 5 * DAY)
-    assert (c.early_start, c.early_finish) == (2 * DAY, 4 * DAY)
-    assert (d.early_start, d.early_finish) == (5 * DAY, 9 * DAY)
-    assert (e.early_start, e.early_finish) == (9 * DAY, 10 * DAY)
-    # C is the only off-critical task: 1 working day of total AND free slack.
-    assert c.total_slack == 1 * DAY
-    assert c.free_slack == 1 * DAY
-    assert a.total_slack == b.total_slack == d.total_slack == e.total_slack == 0
-    assert result.critical_path == (1, 2, 4, 5)
-
-
-def test_example_2_mixed_types_with_lag() -> None:
-    result = compute_cpm(_example_2())
-    assert result.project_finish == 9 * DAY
-    a, b, c = (result.by_id(i) for i in (1, 2, 3))
-    assert (a.early_start, a.early_finish) == (0, 4 * DAY)
-    assert (b.early_start, b.early_finish) == (2 * DAY, 8 * DAY)
-    assert (c.early_start, c.early_finish) == (4 * DAY, 9 * DAY)
-    assert a.total_slack == b.total_slack == c.total_slack == 0
-    assert a.free_slack == b.free_slack == c.free_slack == 0
+    result = compute_cpm(schedule)
+    assert (result.timings[1].early_start, result.timings[1].early_finish) == (0, 960)
+    assert (result.timings[2].early_start, result.timings[2].early_finish) == (960, 2400)
+    assert (result.timings[3].early_start, result.timings[3].early_finish) == (2400, 2880)
+    assert result.project_finish == 2880
+    assert all(timing.total_float == 0 for timing in result.timings.values())
     assert result.critical_path == (1, 2, 3)
 
 
-def test_fs_positive_lag_keeps_both_critical() -> None:
-    tasks = (make_task(1, duration_minutes=DAY), make_task(2, duration_minutes=DAY))
-    relations = (make_relation(1, 2, lag_minutes=DAY // 2),)
-    result = compute_cpm(make_schedule(tasks=tasks, relations=relations))
-    assert result.project_finish == 2 * DAY + DAY // 2
-    a, b = result.by_id(1), result.by_id(2)
-    assert (a.early_start, a.early_finish) == (0, DAY)
-    assert (b.early_start, b.early_finish) == (DAY + DAY // 2, 2 * DAY + DAY // 2)
-    assert a.late_finish == DAY  # lag is absorbed; A stays critical
-    assert a.total_slack == 0 and b.total_slack == 0
-    assert result.critical_path == (1, 2)
+def test_parallel_branch_has_float() -> None:
+    # A(2d) -> {B(3d), C(1d)} -> D(milestone). C carries 960 min (2 day) slack.
+    schedule = _sched(
+        [
+            Task(unique_id=1, name="A", duration_minutes=960),
+            Task(unique_id=2, name="B", duration_minutes=1440),
+            Task(unique_id=3, name="C", duration_minutes=480),
+            Task(unique_id=4, name="D", duration_minutes=0, is_milestone=True),
+        ],
+        [
+            Relation(predecessor_id=1, successor_id=2),
+            Relation(predecessor_id=1, successor_id=3),
+            Relation(predecessor_id=2, successor_id=4),
+            Relation(predecessor_id=3, successor_id=4),
+        ],
+    )
+    result = compute_cpm(schedule)
+    assert result.project_finish == 2400
+    assert result.timings[3].total_float == 960
+    assert result.timings[3].free_float == 960
+    assert result.timings[3].is_critical is False
+    assert result.timings[1].total_float == 0
+    assert result.timings[2].total_float == 0
+    assert result.critical_path == (1, 2, 4)
 
 
-def test_cycle_raises_cpm_error() -> None:
-    tasks = (make_task(1), make_task(2))
-    relations = (make_relation(1, 2), make_relation(2, 1))
-    schedule = make_schedule(tasks=tasks, relations=relations)
+def test_lag_pushes_successor() -> None:
+    # A(1d) -> B(1d) with a +1 day (480 min) lag: B starts at 480 + 480 = 960.
+    schedule = _sched(
+        [
+            Task(unique_id=1, name="A", duration_minutes=480),
+            Task(unique_id=2, name="B", duration_minutes=480),
+        ],
+        [Relation(predecessor_id=1, successor_id=2, lag_minutes=480)],
+    )
+    result = compute_cpm(schedule)
+    assert result.timings[2].early_start == 960
+    assert result.timings[2].early_finish == 1440
+    assert result.project_finish == 1440
+
+
+def test_required_finish_makes_float_negative() -> None:
+    # A(2d) -> B(2d): network finish 1920; require finish at 1440 -> -480 on the chain.
+    schedule = _sched(
+        [
+            Task(unique_id=1, name="A", duration_minutes=960),
+            Task(unique_id=2, name="B", duration_minutes=960),
+        ],
+        [Relation(predecessor_id=1, successor_id=2)],
+    )
+    result = compute_cpm(schedule, required_finish_offset=1440)
+    assert result.project_finish == 1920  # the network's own early finish is unchanged
+    assert result.timings[2].total_float == -480
+    assert result.timings[1].total_float == -480
+    assert result.timings[2].is_critical is True
+
+
+def test_perturbation_flips_criticality() -> None:
+    # Mutation discipline: lengthening the slack branch must change the verdict.
+    base = [
+        Task(unique_id=1, name="A", duration_minutes=960),
+        Task(unique_id=2, name="B", duration_minutes=1440),
+        Task(unique_id=3, name="C", duration_minutes=480),
+        Task(unique_id=4, name="D", duration_minutes=0, is_milestone=True),
+    ]
+    rels = [
+        Relation(predecessor_id=1, successor_id=2),
+        Relation(predecessor_id=1, successor_id=3),
+        Relation(predecessor_id=2, successor_id=4),
+        Relation(predecessor_id=3, successor_id=4),
+    ]
+    baseline = compute_cpm(_sched(base, rels))
+    assert baseline.timings[3].is_critical is False
+
+    perturbed_tasks = [
+        task if task.unique_id != 3 else Task(unique_id=3, name="C", duration_minutes=1440)
+        for task in base
+    ]
+    perturbed = compute_cpm(_sched(perturbed_tasks, rels))
+    assert perturbed.timings[3].is_critical is True
+    assert perturbed.timings[3].total_float == 0
+
+
+def test_cycle_raises() -> None:
+    schedule = _sched(
+        [
+            Task(unique_id=1, name="A", duration_minutes=480),
+            Task(unique_id=2, name="B", duration_minutes=480),
+        ],
+        [
+            Relation(predecessor_id=1, successor_id=2),
+            Relation(predecessor_id=2, successor_id=1),
+        ],
+    )
     with pytest.raises(CPMError):
         compute_cpm(schedule)
 
 
-def test_empty_schedule_raises_cpm_error() -> None:
-    schedule = make_schedule(tasks=(), relations=())
-    with pytest.raises(CPMError):
-        compute_cpm(schedule)
-
-
-def test_deadline_drives_negative_float() -> None:
-    # A(2d) -> B(3d); B has a finish deadline only 2 working days in (project start is Mon
-    # 2026-01-05 08:00), but B cannot finish until day 5. The deadline does not reschedule;
-    # it caps the late finish, so 3 working days of negative float appear and propagate to A.
-    tasks = (
-        make_task(1, duration_minutes=2 * DAY),
-        make_task(2, duration_minutes=3 * DAY, deadline=datetime(2026, 1, 6, 16, 0)),
+def test_summary_tasks_excluded_from_network() -> None:
+    # A summary task is a rollup, not an activity; it must not appear in timings.
+    schedule = _sched(
+        [
+            Task(unique_id=1, name="Phase", duration_minutes=999, is_summary=True),
+            Task(unique_id=2, name="A", duration_minutes=480),
+        ]
     )
-    result = compute_cpm(make_schedule(tasks=tasks, relations=(make_relation(1, 2),)))
-    assert result.project_finish == 5 * DAY  # forward pass is unaffected by the deadline
-    a, b = result.by_id(1), result.by_id(2)
-    assert b.late_finish == 2 * DAY  # capped at the deadline offset
-    assert b.total_slack == -3 * DAY
-    assert a.total_slack == -3 * DAY  # negative float propagates to the predecessor
-    assert result.critical_path == (1, 2)  # total_slack <= 0 -> both critical
+    result = compute_cpm(schedule)
+    assert 1 not in result.timings
+    assert result.project_finish == 480
 
 
-# --- date constraints (project start is Mon 2026-01-05 08:00) --------------------------
+def test_offset_to_datetime_spans_weekend() -> None:
+    calendar = Calendar()
+    friday = dt.datetime(2025, 1, 10, 8)
+    assert offset_to_datetime(friday, 0, calendar) == friday
+    assert offset_to_datetime(friday, 480, calendar) == dt.datetime(2025, 1, 10, 16)
+    # 2 working days from Friday skips the weekend -> Monday 16:00
+    assert offset_to_datetime(friday, 960, calendar) == dt.datetime(2025, 1, 13, 16)
 
 
-def test_snet_delays_successor_and_gives_predecessor_float() -> None:
-    snet = datetime(2026, 1, 8, 8, 0)  # Thu 08:00 = 3 working days in
-    tasks = (
-        make_task(1, duration_minutes=2 * DAY),
-        make_task(
-            2, duration_minutes=2 * DAY, constraint_type=ConstraintType.SNET, constraint_date=snet
-        ),
-    )
-    result = compute_cpm(make_schedule(tasks=tasks, relations=(make_relation(1, 2),)))
-    a, b = result.by_id(1), result.by_id(2)
-    assert b.early_start == 3 * DAY  # SNET pushed it past the logic start (2d)
-    assert (b.early_finish, result.project_finish) == (5 * DAY, 5 * DAY)
-    assert a.total_slack == 1 * DAY  # A can slip a day without delaying B's constrained start
-    assert b.total_slack == 0
-    assert result.critical_path == (2,)
-
-
-def test_mso_conflict_drives_negative_float_on_predecessor() -> None:
-    mso = datetime(2026, 1, 6, 8, 0)  # Tue 08:00 = 1 working day in
-    tasks = (
-        make_task(1, duration_minutes=2 * DAY),
-        make_task(
-            2, duration_minutes=2 * DAY, constraint_type=ConstraintType.MSO, constraint_date=mso
-        ),
-    )
-    result = compute_cpm(make_schedule(tasks=tasks, relations=(make_relation(1, 2),)))
-    a, b = result.by_id(1), result.by_id(2)
-    assert b.early_start == 1 * DAY  # pinned by MSO, ignoring the 2-day predecessor
-    assert b.total_slack == 0
-    assert a.total_slack == -1 * DAY  # A cannot finish in time -> negative float
-    assert result.critical_path == (1, 2)
-
-
-def test_fnlt_cap_drives_negative_float() -> None:
-    fnlt = datetime(2026, 1, 7, 8, 0)  # Wed 08:00 = 2 working days in
-    tasks = (
-        make_task(
-            1, duration_minutes=3 * DAY, constraint_type=ConstraintType.FNLT, constraint_date=fnlt
-        ),
-    )
-    result = compute_cpm(make_schedule(tasks=tasks, relations=()))
-    a = result.by_id(1)
-    assert a.early_finish == 3 * DAY  # forward pass unaffected
-    assert a.late_finish == 2 * DAY  # FNLT caps the late finish
-    assert a.total_slack == -1 * DAY
-
-
-def test_alap_constraint_raises_cpm_error() -> None:
-    tasks = (make_task(1, constraint_type=ConstraintType.ALAP),)
-    with pytest.raises(CPMError):
-        compute_cpm(make_schedule(tasks=tasks, relations=()))
-
-
-# --- calendar math ---------------------------------------------------------------------
-
-
-def test_is_working_day() -> None:
-    cal = make_calendar(holidays=(date(2026, 1, 1),))  # New Year's Day, a Thursday
-    assert is_working_day(cal, date(2026, 1, 5))  # Monday
-    assert not is_working_day(cal, date(2026, 1, 3))  # Saturday
-    assert not is_working_day(cal, date(2026, 1, 1))  # holiday
-
-
-def test_add_working_minutes_lands_on_day_close() -> None:
-    cal = make_calendar()
-    assert add_working_minutes(cal, datetime(2026, 1, 5, 8, 0), DAY) == datetime(2026, 1, 5, 16, 0)
-
-
-def test_add_working_minutes_skips_weekend() -> None:
-    cal = make_calendar()
-    # Friday 08:00 + 600 min = Friday's 480 + Monday's 120 -> Monday 10:00.
-    result = add_working_minutes(cal, datetime(2026, 1, 9, 8, 0), 600)
-    assert result == datetime(2026, 1, 12, 10, 0)
-
-
-def test_working_minutes_between_round_trips() -> None:
-    cal = make_calendar(holidays=(date(2026, 1, 1),))
-    start = datetime(2026, 1, 2, 8, 0)  # Friday
-    for minutes in (0, 60, DAY, DAY + 1, 2 * DAY, 1000, 5 * DAY):
-        assert (
-            working_minutes_between(cal, start, add_working_minutes(cal, start, minutes)) == minutes
-        )
-
-
-def test_minutes_to_working_days() -> None:
-    cal = make_calendar()  # 8h/day
-    assert minutes_to_working_days(DAY, cal) == 1.0
-    assert minutes_to_working_days(5 * DAY, cal) == 5.0
+def test_offset_to_datetime_rejects_negative() -> None:
+    with pytest.raises(ValueError, match="must be >= 0"):
+        offset_to_datetime(_START, -1, Calendar())

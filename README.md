@@ -1,96 +1,84 @@
-# Schedule Manipulation Analysis Tool (Experiment)
+# Schedule Forensics
 
-A forensic schedule-analysis tool. It ingests project schedules (MS Project / Primavera)
-and runs DCMA-14 schedule-quality metrics and critical-path (CPM) analysis. This repository
-is an **autonomous build experiment** — see [`EXPERIMENT-REPORT.md`](EXPERIMENT-REPORT.md).
+A **local-only, CUI-compliant** forensic schedule-analysis tool. It ingests
+project schedules (MS Project / Primavera), runs critical-path (CPM) analysis and
+schedule-quality/forensic metrics (DCMA-14, SPI/CEI/BEI, SRA, manipulation
+detection), and produces Excel/Word reports plus a plain-English executive
+summary. It runs entirely on `127.0.0.1` — **no schedule data ever leaves the
+machine** (see `CLAUDE.md`, Law 1).
 
-> Fidelity-first: results aim to match Acumen Fuse / Steelray / MS Project semantics.
-> Speed and elegance are tiebreakers, never overrides.
-
-## Get a ready-to-run app (no Python at all)
-The easiest option — a single self-contained program, nothing to install:
-1. On GitHub, open the **Actions** tab → **Build apps** → **Run workflow** (or push a tag like `v0.1.0`).
-2. When it finishes, open that run and download the artifact for your system from **Artifacts**:
-   `ScheduleTool-windows`, `ScheduleTool-macos`, or `ScheduleTool-linux`.
-3. Unzip it and **double-click `ScheduleTool`** (`ScheduleTool.exe` on Windows). Your browser opens
-   to the tool. A small console window stays open — close it to stop the tool.
-   - First open on macOS may be blocked: right-click → **Open** → **Open**. (The app is unsigned.)
-   - The CI-built app **bundles a Java runtime**, so native `.mpp` import works with nothing else to
-     install.
-
-Prefer to build it yourself? Double-click **`build-app.command`** (macOS/Linux) or
-**`build-app.bat`** (Windows) — it produces the same program in the `dist/` folder. (Building needs
-Python 3.13 once; *running* the result does not. PyInstaller can't cross-build, so build on the OS
-you want the app for.) If a JDK (with `jlink`) is on your machine at build time, the script bundles a
-JRE so the built app reads `.mpp` too; otherwise it still builds, just without native `.mpp`.
-
-## Quick start — click to run (no terminal)
-You need **Python 3.13** installed once (from python.org). Then:
-1. Download this project (green **Code** button → **Download ZIP**, then unzip — or `git clone`).
-2. Double-click the launcher in the project folder:
-   - **macOS / Linux:** `Start-Schedule-Tool.command`
-   - **Windows:** `Start-Schedule-Tool.bat`
-3. The first run installs everything automatically (about a minute). Then your browser opens to
-   the tool. Paste a schedule (or click **Load example**) and press **Analyze schedule**.
-4. To stop it, close the little window the launcher opened.
-
-**Make it a desktop icon:**
-- **Windows:** right-click `Start-Schedule-Tool.bat` → **Send to → Desktop (create shortcut)**.
-  (Right-click the shortcut → Properties → Change Icon to pick a picture.)
-- **macOS:** drag `Start-Schedule-Tool.command` to the Desktop while holding **⌘+⌥** (makes an alias).
-  If macOS blocks it the first time, right-click → **Open** → **Open**.
-- **Linux:** right-click `Start-Schedule-Tool.command` → mark as executable, then copy it (or a
-  `.desktop` shortcut) to your Desktop.
-
-## Loading real files
-The web UI's **Import** button reads:
-- **MS Project XML** (`.xml`, *File → Save As → XML*) and **Primavera P6** (`.xer`) — pure-Python, no setup.
-- **Native MS Project `.mpp`** — via **MPXJ** (optional): needs Java 17+ and `pip install -r requirements-mpp.txt`
-  (the launcher installs it automatically when possible). The CI-built standalone app bundles its own
-  JRE, so `.mpp` works there with no setup. Without Java/MPXJ, use *Save As → XML*.
-
-Importers are **best-effort** (validated against crafted samples; the `.mpp`/MPXJ path is the most
-mature) — eyeball an imported schedule before relying on it. See `FIDELITY-COMPROMISE-importers.md`
-and `docs/skills/native-mpp-parser.md`.
+> Fidelity-first: results aim to match Deltek Acumen Fuse / Steelray-SSI /
+> Microsoft Project semantics. Speed and elegance are tiebreakers, never
+> overrides (Law 2).
 
 ## Status
-- **M1 — Scaffolding:** Flask app factory, 500 MB upload guard + 413 handler, CI.
-- **M2 — Data model:** strict/frozen Pydantic `Schedule`/`Task`/`Relation`/`Calendar` (+ constraints, deadlines, baseline/actual tracking data).
-- **M3 — Parser seam:** native import — MS Project `.xml` & `.mpp` (MPXJ) and Primavera `.xer`.
-- **M4 — CPM engine:** FS/SS/FF/SF + lag, MS Project date constraints, deadlines, total/free slack, negative float, critical path.
-- **M5+ — DCMA metrics:** **all 14** of the DCMA 14-Point assessment, plus an integrity/health score.
 
-See [`docs/dcma-metrics.md`](docs/dcma-metrics.md) and [`docs/cpm-model.md`](docs/cpm-model.md).
+A complete, offline forensic analysis engine runs end-to-end (MS Project XML or a
+JSON `Schedule` → CPM → full DCMA-14 + driving-path + SRA + multi-version
+diff/float-trend → Excel/Word reports + a plain-English executive summary), with a
+localhost web UI. **Built and green:**
 
-## Layout
-- `app/` — application package: `create_app` factory, config, error handlers, routes.
-- `tests/` — pytest suite.
-- `docs/` — design notes.
+- **Frozen data model** (`schemas.py`, v1.0.0): strict, immutable,
+  referential-integrity guarded; cross-version identity by `UniqueID` only.
+- **Ingestion**: MS Project XML importer (pure-Python). XER / native `.mpp`
+  (MPXJ-subprocess) / optional Windows-only COM are **deferred**.
+- **CPM engine** (`cpm.py`): forward/backward pass on an integer working-minute
+  axis; all four link types (FS/SS/FF/SF) + lag; SNET/FNET/SNLT/FNLT + deadlines;
+  total/free float (incl. negative); critical path. ALAP/MSO/MFO **fail closed**
+  (raise) pending live-MS Project validation.
+- **Version matcher**, **DCMA 14-Point** (all 14), **driving path** (SSI slack),
+  **SRA** (Monte-Carlo BetaPERT), **diff/float-trend** (manipulation analysis),
+  an **analysis composition layer** + integrity score, **Excel/Word reports**, and
+  a **pluggable executive summary** (NullInferenceBackend default; CUI-gated).
+- **Localhost UI** (`webapp/`): Flask on `127.0.0.1`, upload → dashboard → report
+  download, session-wipe, CUI banner.
 
-## Development
+**Deferred / next:** Primavera XER + MPXJ-subprocess + COM ingestion; cost-based
+SPI/CEI earned-value indices (a deliberate schema v1.1.0 bump); the local Ollama
+model wiring (a human-in-loop step); validation against live MS Project on real
+`.mpp` (Windows-local).
+
+## Run the tool (localhost UI)
+
 ```sh
-python3.13 -m venv .venv
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+PYTHONPATH=src python -m schedule_forensics.webapp   # serves http://127.0.0.1:5000
+```
+
+Open `http://127.0.0.1:5000`, paste a JSON `Schedule` (or upload MS Project XML),
+and click Analyze. Use **Wipe** to destroy all in-memory data. Nothing leaves the
+machine (Law 1).
+
+## Develop
+
+```sh
+python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-dev.txt
-ruff check . && ruff format --check . && mypy app/ && pytest -q
+ruff check . && ruff format --check . && mypy && pytest
 ```
 
-## Running (for developers)
-```sh
-python launch.py                          # starts the server AND opens the browser UI at /
-# or:
-flask --app "app:create_app" run          # http://localhost:5000/  (browser UI), /health, /analyze
-```
-- `GET /` — the browser UI (paste a schedule, click Analyze).
-- `POST /analyze` — validates a JSON `Schedule`, runs the CPM engine and all 14 DCMA metrics, and
-  returns per-task timings (ES/EF/LS/LF/slack), the critical path, project finish (working days),
-  per-metric results, and an integrity/health score (share of runnable metrics that pass, with the
-  failing metrics listed as findings). Example:
-  ```sh
-  curl -X POST http://localhost:5000/analyze \
-    -H 'Content-Type: application/json' --data-binary @schedule.json
-  ```
+Both Python 3.11 and 3.13 work; the project targets **3.11+**.
 
-## Security note
-Schedule files (`*.mpp`, `*.xer`, `*.xml`) may carry Controlled Unclassified Information
-and are git-ignored. Do not commit them.
+## Layout
+
+- `src/schedule_forensics/` — the package (schema, importers, CPM engine).
+- `tests/` — pytest suite; `tests/fixtures/` holds **synthetic** schedules only.
+- `docs/` — `ARCHITECTURE.md`, `REFERENCES.md` (source manifest), `HAZARDS.md`.
+- `scripts/` — local validation harness (`validate_against_msp.py`, Windows/COM).
+- `CLAUDE.md` — the project constitution (the two laws, commandments, hazards,
+  file-ownership manifest). Read it before contributing.
+
+## Platform note
+
+The primary ingestion path (MS Project XML + Primavera XER + native `.mpp` via
+MPXJ-as-subprocess) is cross-platform. COM automation is an **optional
+Windows-only** enhancement, validated locally; it is never the only path.
+
+## Security note (CUI)
+
+Schedule files (`*.mpp`, `*.xer`, `*.xml`, `*.mpx`, `*.csv`) may carry Controlled
+Unclassified Information and are git-ignored. Do not commit real schedule data.
+Only synthetic fixtures under `tests/fixtures/` are tracked.

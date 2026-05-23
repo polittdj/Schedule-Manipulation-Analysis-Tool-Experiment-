@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"
+     role="img" aria-label="Schedule Forensics">
+  <title>Schedule Forensics</title>
+  <!-- Rounded badge background -->
+  <rect x="16" y="16" width="480" height="480" rx="96" ry="96" fill="#1a3a5a"/>
+  <rect x="16" y="16" width="480" height="480" rx="96" ry="96" fill="none"
+        stroke="#0e2236" stroke-width="8"/>
+
+  <!-- Gantt / schedule bars (white; one critical bar in red) -->
+  <g>
+    <rect x="96"  y="150" width="200" height="38" rx="12" fill="#eaf2fb"/>
+    <rect x="150" y="214" width="240" height="38" rx="12" fill="#c0392b"/>  <!-- critical -->
+    <rect x="190" y="278" width="150" height="38" rx="12" fill="#eaf2fb"/>
+    <rect x="120" y="342" width="180" height="38" rx="12" fill="#eaf2fb"/>
+  </g>
+
+  <!-- Magnifying glass (forensic) over the bars -->
+  <g stroke="#ffd24a" stroke-width="22" fill="none" stroke-linecap="round">
+    <circle cx="350" cy="330" r="72" fill="#1a3a5a"/>
+    <line x1="404" y1="384" x2="452" y2="432"/>
+  </g>
+</svg>

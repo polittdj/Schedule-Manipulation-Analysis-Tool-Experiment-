@@ -1,33 +1,47 @@
-# --- CUI-bearing schedule files: NEVER commit these ---
-# Schedule exports can contain Controlled Unclassified Information.
+# =====================================================================
+# LAW 1 -- DATA SOVEREIGNTY (CUI). Schedule data must NEVER be committed.
+# Block every schedule-bearing format at the VCS layer (fail closed).
+# =====================================================================
 *.mpp
+*.mpp.bak
+*.mpx
 *.xer
 *.xml
+*.csv
+docs/sources/*.mpp
 
-# --- Python ---
+# Runtime data directories (uploads / parsed / derived / exports).
+session_data/
+uploads/
+exports/
+local_validation_results/
+
+# NOTE (deliberate deviation from the master directive's "*.json"): we do NOT
+# globally ignore *.json, because tracked config (e.g. .claude/settings.json,
+# package manifests) is JSON. Schedule JSON is instead blocked by the runtime
+# data directories above. Rationale logged in docs/HAZARDS.md.
+
+# ---------------------------------------------------------------------
+# EXCEPTION: synthetic, hand-authored test fixtures are the ONLY
+# schedule-format files allowed in-repo. They contain no real data.
+# ---------------------------------------------------------------------
+!tests/fixtures/
+!tests/fixtures/**
+
+# --- Python / tooling / build ---
 __pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
-build/
-dist/
-
-# --- Virtual environments ---
+*.pyc
+*.pyo
 .venv/
 venv/
-env/
-
-# --- Tooling caches ---
-.pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.coverage
-htmlcov/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+*.log
 
-# --- Editor/OS noise ---
-.idea/
-.vscode/
-.DS_Store
-
-# Bundled JRE produced at build time (do not commit)
-jre/
+# --- MPXJ local install (produced by tools/mpxj/setup.sh; not source) ---
+tools/mpxj/lib/
+tools/mpxj/classes/

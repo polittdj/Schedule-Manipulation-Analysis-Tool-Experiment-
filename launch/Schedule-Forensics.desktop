@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Schedule Forensics
+Comment=Local forensic schedule analysis (runs on 127.0.0.1; no data leaves the machine)
+# Replace __REPO__ with the ABSOLUTE path to your cloned repository, then copy this
+# file to ~/Desktop (and "Allow Launching"), or to ~/.local/share/applications/.
+# The launch/README.md has a one-liner that fills __REPO__ in for you.
+Exec=__REPO__/launch/schedule-forensics.sh
+Icon=__REPO__/launch/icon.svg
+Terminal=true
+Categories=Office;ProjectManagement;
