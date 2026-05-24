@@ -10,17 +10,22 @@
 ## 0. Resume in 60 seconds
 
 ```sh
-git checkout claude/charming-cerf-iddZv && git pull
-python3 -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -e . && pip install -r requirements-dev.txt
-ruff check . && ruff format --check . && mypy && pytest      # expect: all clean, ~363 pass / 3 skip
+git checkout main && git pull                      # feature work merges to main via focused PRs
+python3 -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -e . && pip install -r requirements-dev.txt   # (CI/pytest also work via pythonpath=src)
+ruff check . && ruff format --check . && mypy && pytest    # expect: all clean, ~415 pass / 3 skip
 python -m schedule_forensics.webapp                # serves http://127.0.0.1:5000 (--port / SF_PORT)
 ```
 
-- **Branch:** `claude/charming-cerf-iddZv` (develop here only; never push elsewhere
-  without explicit permission). **Draft PR #24 → main** (do not merge without
-  permission). **Schema FROZEN at v1.2.0.** Latest work + open items:
-  `PHASE-COMPLETE-9.md`.
+- **Branching (this build):** focused feature branches → **draft PR → `main`**;
+  the user squash-merges. Recent series used the `claude/eager-brown-OYDZw[-topic]`
+  namespace. Never push to `main` directly; never force-push a shared branch.
+  **Schema FROZEN at v1.2.0.** Latest work + open items: `PHASE-COMPLETE-10.md`
+  (this session); prior: `PHASE-COMPLETE-9.md`.
+- **NOTE on `python -m`:** this is a `src/` layout. `pytest` finds the package via
+  `pythonpath = ["src"]`; to run the webapp from a bare checkout without
+  installing, use `PYTHONPATH=src python -m schedule_forensics.webapp` (or
+  `pip install -e .` first).
 - **Green bar before every commit:** `ruff check`, `ruff format --check`,
   `mypy` (strict on `src/`), `pytest` — all clean. CI runs the same on Python
   3.11 + 3.13.
@@ -50,13 +55,16 @@ JPype.** Do not "restore" COM-as-trust-root from the original master directive.
 
 ---
 
-## 3. What is built (Phases 0–8 complete, all green)
+## 3. What is built (Phases 0–10 complete, all green)
 
-Pipeline runs end-to-end: **MS Project XML / JSON `Schedule` → CPM → full DCMA-14 +
-driving-path + SRA + multi-version diff/float-trend → composition + health score →
-Excel/Word reports → executive summary → localhost UI.** Now also: XER ingestion +
-earned-value SPI/SPI(t), CEI, and COM ingestion. 26 source modules, ~363 tests. Module map
-(`src/schedule_forensics/`):
+Pipeline runs end-to-end: **MS Project XML / XER / native `.mpp` (MPXJ) / JSON
+`Schedule` → CPM → full DCMA-14 + driving-path + SRA + multi-version
+diff/float-trend/CEI → composition + health score → Excel/Word reports →
+executive summary → localhost UI.** The UI takes **`.mpp`/`.xer`/XML uploads
+(multi-file for the comparative view)** + an MPXJ/COM reader choice, and surfaces:
+single-schedule DCMA + EV (SPI/SPI(t)) + **SRA risk (P50/P80/P95 + criticality)**,
+and multi-version **CEI + trend + objective version-diff**. Reports mirror all of
+it. ~27 source modules, ~415 tests. Module map (`src/schedule_forensics/`):
 
 | Module | Role |
 |---|---|
@@ -73,9 +81,11 @@ earned-value SPI/SPI(t), CEI, and COM ingestion. 26 source modules, ~363 tests. 
 | `dcma_checks.py` | DCMA-14 **structural** Metrics 1–8. |
 | `dcma_progress.py` | DCMA-14 **progress** Metrics 9–14 (incl. CPLI, BEI, Critical-Path Test). |
 | `driving_path.py` | SSI driving-slack trace (relationship free float == 0 ⇒ binding). |
-| `sra.py` | Monte-Carlo SRA, BetaPERT 3-point, P50/P80/P95 + criticality index (stdlib `random`, seed-deterministic). |
-| `diff_engine.py` | Objective version-pair deltas (duration/float/date shifts, became-critical/recovered, logic add/remove). |
-| `float_analysis.py` | Float burn-rate + trend bands — **labeled tool-original extension** (`is_extension=True`). |
+| `sra.py` | Monte-Carlo SRA, BetaPERT 3-point, P50/P80/P95 + criticality index (stdlib `random`, seed-deterministic). **Surfaced (PR #29):** dashboard card + Excel "Risk (SRA)" sheet + Word section; computed once in the webapp (size-capped, fail-safe), default spread labelled a tool heuristic. |
+| `diff_engine.py` | Objective version-pair deltas (duration/float/date shifts, became-critical/recovered, logic add/remove). **Surfaced (PR #31):** comparative "Version-to-Version Changes" card + Excel "Version Diff" sheet + Word section; objective facts, no threshold. |
+| `trend_analysis.py` | Multi-version trajectory (finish drift, per-version health) + float-erosion bands — **tool-original extension**. Surfaced in the comparative UI + Excel/Word (PR #28). |
+| `parity.py` | Golden-file parity harness (PR #30): load a case (input + expected reference values w/ tolerance + cited source), recompute, diff each value; unknown keys/malformed cases fail loud. CLI `scripts/parity_report.py`; cases under `tests/fixtures/golden/`; see `docs/PARITY.md`. Local-only. |
+| `float_analysis.py` | Float burn-rate + trend bands — **labeled tool-original extension** (`is_extension=True`); feeds `trend_analysis`. |
 | `analysis.py` | `analyze_schedule(schedule) -> ScheduleAnalysis`: composes CPM + all 14 DCMA + driving path + health score (the "always-100" guard). |
 | `report_excel.py` / `report_word.py` | openpyxl / python-docx reports over `ScheduleAnalysis`; CUI banner everywhere; round-trip traceability tested. |
 | `inference.py` | `Classification` (CUI default), `InferenceBackend` protocol, `select_backend` (**fail closed: non-local backend unselectable under CUI**), `NullInferenceBackend` (default), `OllamaBackend` (local, not wired), `UnclassifiedClaudeBackend` (network, UNCLASSIFIED-only). |
@@ -105,47 +115,31 @@ Phase reports with full detail: `PHASE-COMPLETE-0.md`, `-1.md`, `-2.md`, `-5.md`
 
 ## 5. Next work (prioritized) — pick up here
 
-DONE (this session; see `PHASE-COMPLETE-9.md`):
-- ✅ **UI port configurable** — `--port` / `SF_PORT` in `webapp/app.py`; host fixed
-  `127.0.0.1`; fail-closed on bad input; tested.
-- ✅ **Primavera XER importer** (`importers/xer.py`) — pure-Python, UniqueID =
-  `task_id`, preds/lags mapped, cited; synthetic fixture + cross-importer parity.
-- ✅ **Earned-value SPI + SPI(t)** (`performance_indices.py`) behind the deliberate
-  **schema v1.1.0** bump (`Task.baseline_start` + `Task.budgeted_cost`). Wired into
-  `analysis.py` (kept out of the DCMA health score) + Excel/Word/UI + exec summary.
-- ✅ **CEI** (Current Execution Index, `cei.py`) behind the deliberate **schema
-  v1.2.0** bump (`Task.finish`). Per-period finished/forecast-to-finish count ratio
-  (PASEG 10.4.5 / NDIA IPMD); ≥2 status-dated versions (else "insufficient data");
-  unmatched task = did-not-finish + diagnostic; capped at 1.0; 0.95 threshold
-  source-pending/VERIFY; auto-snapshot = tool-original capture. All importers
-  populate `Task.finish`. Multi-version library fn (like `diff_engine`), not in the
-  single-schedule UI. 18 tests incl. end-to-end from MSPDI.
-- ✅ **Phase-9 hardening rounds 1–3** — fixed the importer error contract (dup
-  UID/task_id → `ImporterError`); +17 edge-case tests incl. end-to-end XER≡MSPDI
-  full-analysis parity; XER wired into the UI upload; 3 clean runs.
-- ✅ **MPXJ-as-subprocess** native `.mpp` (`importers/mpp_mpxj.py`) — out-of-process,
-  killable; configured via `SF_MPXJ_CMD`/`SF_MPXJ_JAR`; converts → MSPDI → reuses
-  `parse_msp_xml`; **never JPype**. Hermetic stub tests + a live integration test
-  (passed against real MPXJ 16.2.0; skips by default). Setup: `docs/MPXJ.md` +
-  `tools/mpxj/MpxjToMspdi.java`.
+DONE in earlier phases (see `PHASE-COMPLETE-9.md` and `-10.md`): UI port config;
+XER importer; EV SPI/SPI(t) (schema v1.1.0); CEI (schema v1.2.0); Phase-9 importer
+hardening; MPXJ-as-subprocess `.mpp`; COM importer (Linux-mapping-tested);
+**`.mpp`/`.mpx`/`.xer`/XML uploads wired into the webapp** (multi-file + MPXJ/COM
+reader choice); **CEI + trend surfaced** in the comparative UI + reports.
 
-REMAINING (all environment- or input-constrained):
-1. ✅ **COM importer** **DONE** (`importers/com_msproject.py`): pure
-   `schedule_from_com_project` mapping unit-tested on Linux with a fake COM object;
-   `parse_mpp_via_com` is the Windows-only driver (guarded win32com import,
-   headless, ReadOnly, defensive teardown). `scripts/validate_against_msp.py` wired
-   to it. **Still must be validated against a real `.mpp` on Windows** (enum codes
-   + minute units are source-pending, gotcha 10).
-2. **Native `.mpp` last mile**: validate the MPXJ path against a REAL binary
-   `.mpp` on a machine that has one (cannot be authored on Linux). Optionally wire
-   `.mpp` upload into the webapp once MPXJ is a standard server-side dependency.
-3. **Golden-file parity harness** (needs the user to supply Acumen/SSI/MSP outputs
-   for a known schedule); live-MS Project validation on real `.mpp` (Windows-local).
-4. **CEI real-data validation**: confirm the program's CEI threshold (0.95 is the
+DONE this session (Phase 10; see `PHASE-COMPLETE-10.md`):
+- ✅ **SRA surfaced** (PR #29, merged): Monte-Carlo P50/P80/P95 + criticality index
+  in the dashboard + Excel/Word; computed once per analyze (size-capped + fail-safe);
+  method = reference parity, default spread = tool heuristic (labelled).
+- ✅ **Golden-file parity harness** (PR #30): `parity.py` + `scripts/parity_report.py`
+  + `docs/PARITY.md` + a self-regression golden case. Ready for real reference numbers.
+- ✅ **Version-diff surfaced** (PR #31): objective `diff_engine` deltas in the
+  comparative UI + Excel/Word ("Version-to-Version Changes" / "Version Diff").
+
+REMAINING — all HUMAN-IN-LOOP or input-constrained (cannot be done from Linux/CI alone):
+1. **Real reference-tool parity numbers**: the harness (PR #30) is ready; supply
+   Acumen Fuse / SSI / MS Project outputs for a known schedule as a golden case
+   (`docs/PARITY.md`) and triage any drift. This is the substantive parity claim.
+2. **Native `.mpp` + live MS Project validation on Windows**: validate the MPXJ
+   path and the COM importer against a REAL binary `.mpp` on a Windows box
+   (enum codes + minute units source-pending, gotcha 10). Cannot be authored on Linux.
+3. **CEI real-data validation**: confirm the program's CEI threshold (0.95 is the
    common gate but source-pending — NDIA prefers a >75th-percentile trend) and the
-   XER `early_end_date`→`finish` mapping against real exports. Consider surfacing
-   the multi-version metrics (CEI, `diff_engine`, `float_analysis`) in a comparative
-   UI/report view — they are library-only today (the UI is single-schedule).
+   XER `early_end_date`→`finish` mapping against real exports.
 
 **HUMAN-IN-LOOP (needs the user, do not attempt to wire alone): local Ollama model
 setup** (Phase-7 checkpoint). `OllamaBackend.summarize` is the wiring point and
@@ -176,9 +170,12 @@ The cloud Claude backend stays hard-gated off under CUI.
 
 ## 7. Workflow
 
-- Develop on `claude/charming-cerf-iddZv`; commit small, push after each green
-  step (so nothing is lost if the container recycles). Draft PR #24 → main; do not
-  merge to main without explicit permission; never force-push.
+- Develop on a focused feature branch (recent series: `claude/eager-brown-OYDZw[-topic]`);
+  commit small, push after each green step (so nothing is lost if the container
+  recycles); open a **draft PR → `main`** per feature. The user squash-merges. Do
+  not push to `main` directly; never force-push a shared branch. (When stacking a
+  PR on an unmerged one that touches the same files, rebase onto `main` once the
+  base merges — see Phase 10's diff PR.)
 - File-ownership manifest is in `CLAUDE.md` — a subagent writes only files it owns.
 - End each phase with a `PHASE-COMPLETE-N.md` (directive §12 format).
 - **Standing user instruction (this build):** proceed autonomously — "do what you
