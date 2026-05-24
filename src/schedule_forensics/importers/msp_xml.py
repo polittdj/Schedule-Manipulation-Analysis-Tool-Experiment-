@@ -198,7 +198,10 @@ def parse_msp_xml_string(xml_text: str, *, calendar: Calendar | None = None) -> 
 
     try:
         return Schedule(
-            name=_child_text(root, "Name") or _child_text(root, "Title") or "Untitled",
+            # MS Project's <Name> is typically the file name (e.g. "project.xml" from an
+            # MPXJ .mpp conversion), while <Title> is the human document title. Prefer
+            # the title so the project shows its real name, not the source file name.
+            name=_child_text(root, "Title") or _child_text(root, "Name") or "Untitled",
             project_start=project_start,
             status_date=_parse_datetime(_child_text(root, "StatusDate")),
             calendar=calendar if calendar is not None else Calendar(),
