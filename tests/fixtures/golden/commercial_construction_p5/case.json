@@ -1,0 +1,19 @@
+{
+  "case": "commercial_construction_p5",
+  "input": "input.xml",
+  "reference_tool": "Deltek Acumen Fuse (Workbook1 DCMA / Schedule-Quality report, Project5 status 2026-08-27)",
+  "notes": "REAL reference-tool parity case (the first one): 'Commercial Construction', latest version (Project5, 145 tasks). Expected values are Acumen Fuse's, so this asserts genuine Acumen parity (unlike simple_network_self, which is a self-regression baseline). Acumen reported the structural checks clean; baseline-finish compliance was poor (~20%), so the baseline-based metrics fail in both tools. input.xml is the MPXJ MSPDI conversion of the source .mpp; the source files are non-CUI reference schedules provided by the data owner (so they are safe to commit). See docs/PARITY.md.",
+  "checks": [
+    {"metric": "dcma:DCMA-01:status", "expected": "PASS", "source": "Acumen: 6 missing-logic activities (<=5%)"},
+    {"metric": "dcma:DCMA-01:measured", "expected": 4.76, "tolerance": 0.75, "source": "Acumen: 6 of 126 non-summary activities missing logic"},
+    {"metric": "dcma:DCMA-02:status", "expected": "PASS", "source": "Acumen: 0 leads"},
+    {"metric": "dcma:DCMA-03:status", "expected": "PASS", "source": "Acumen: 2 lags (<=5%)"},
+    {"metric": "dcma:DCMA-05:status", "expected": "PASS", "source": "Acumen: 0 hard constraints"},
+    {"metric": "dcma:DCMA-07:status", "expected": "PASS", "source": "Acumen: 0 negative-float activities"},
+    {"metric": "dcma:DCMA-09:status", "expected": "PASS", "source": "Acumen: no invalid forecast/actual dates flagged"},
+    {"metric": "dcma:DCMA-10:status", "expected": "PASS", "source": "Acumen: schedule is resource-loaded (33 resources)"},
+    {"metric": "dcma:DCMA-12:status", "expected": "PASS", "source": "Acumen: critical-path test passes"},
+    {"metric": "dcma:DCMA-11:status", "expected": "FAIL", "source": "Acumen: baseline finish compliance ~20% (severe slip from baseline)"},
+    {"metric": "dcma:DCMA-14:status", "expected": "FAIL", "source": "Acumen: declining baseline execution (BEI well below 0.95)"}
+  ]
+}

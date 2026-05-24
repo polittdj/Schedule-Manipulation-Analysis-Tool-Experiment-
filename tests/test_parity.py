@@ -56,6 +56,18 @@ def test_self_baseline_is_not_claimed_as_parity() -> None:
     assert "NOT" in case.reference_tool.upper() or "self" in case.reference_tool.lower()
 
 
+def test_real_acumen_reference_case_is_present_and_claims_parity() -> None:
+    """The committed Acumen case ships and IS a genuine reference-tool parity claim.
+
+    Unlike the self-regression baseline, this case's expected values come from
+    Deltek Acumen Fuse, so its ``reference_tool`` must name the external authority
+    (the parametrized test above asserts our recomputation matches it)."""
+    case = load_case(_GOLDEN_ROOT / "commercial_construction_p5")
+    assert "Acumen" in case.reference_tool
+    assert "self" not in case.reference_tool.lower()
+    assert len(case.checks) >= 10
+
+
 # ── Layer 2: harness is non-vacuous ───────────────────────────────────────────
 
 
