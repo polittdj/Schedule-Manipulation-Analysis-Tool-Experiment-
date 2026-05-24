@@ -43,6 +43,12 @@ Then launch it from your apps menu or the Desktop icon.
   Ollama, start it, and use it** to polish the executive summary (override the model
   with `SF_OLLAMA_MODEL`). Nothing is auto-downloaded; with no Ollama — or no pulled
   model — the tool uses its deterministic summary. See `docs/OLLAMA.md`.
+- **Start/stop with the tool:** when you exit, the launcher unloads the model (frees
+  memory). On **Windows** it shuts Ollama down (it restarts next time you launch the
+  tool); on **macOS/Linux** it stops the Ollama server only if the launcher started
+  it, leaving a system-managed Ollama running. The shutdown runs on a clean stop
+  (Ctrl+C / quitting the tool); if you force-close the window it may be skipped, but
+  Ollama unloads an idle model on its own after a few minutes.
 - **Or any local OpenAI-compatible server** (llama.cpp `llama-server`, LM Studio,
   vLLM): set `SF_LLM_BASE_URL` (e.g. `http://127.0.0.1:8080/v1`) + `SF_LLM_MODEL`
   in the launcher header.

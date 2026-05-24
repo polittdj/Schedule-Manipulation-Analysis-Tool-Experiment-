@@ -43,4 +43,5 @@ echo "Starting Schedule Forensics at ${URL}"
 echo "(Close this window to stop the tool. All data stays on this machine.)"
 # Open the browser a moment after the server starts.
 ( sleep 2; open "${URL}" >/dev/null 2>&1 || true ) &
-exec .venv/bin/python -m schedule_forensics.webapp
+# NOT exec: keep this shell alive so the _ollama.sh EXIT trap can stop Ollama.
+.venv/bin/python -m schedule_forensics.webapp

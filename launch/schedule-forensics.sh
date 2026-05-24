@@ -38,4 +38,5 @@ URL="http://127.0.0.1:${SF_PORT}"
 echo "Starting Schedule Forensics at ${URL}"
 echo "(Close this window / Ctrl-C to stop. All data stays on this machine.)"
 ( sleep 2; (xdg-open "${URL}" >/dev/null 2>&1 || true) ) &
-exec .venv/bin/python -m schedule_forensics.webapp
+# NOT exec: keep this shell alive so the _ollama.sh EXIT trap can stop Ollama.
+.venv/bin/python -m schedule_forensics.webapp
