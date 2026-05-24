@@ -1,0 +1,20 @@
+{
+  "case": "simple_network_self",
+  "input": "input.xml",
+  "reference_tool": "self-generated regression baseline (NOT reference-tool parity)",
+  "notes": "Snapshot of THIS tool's own output on the synthetic simple_network MSPDI fixture. It guards the analysis pipeline against unintended drift and demonstrates the harness end to end. It is explicitly NOT evidence of Acumen/SSI/MS Project parity (LAW 2 parity-honesty). To assert real parity, add a case whose expected values come from a reference tool and cite it in each check's source.",
+  "checks": [
+    {"metric": "project_finish_minutes", "expected": 2400, "tolerance": 0, "source": "self (regression baseline)"},
+    {"metric": "project_finish_days", "expected": 5.0, "tolerance": 0.0, "source": "self (regression baseline)"},
+    {"metric": "health_score_percent", "expected": 72.7273, "tolerance": 0.01, "source": "self (regression baseline)"},
+    {"metric": "critical_path", "expected": [1, 2, 4], "source": "self (regression baseline)"},
+    {"metric": "driving_chain", "expected": [1, 2, 4], "source": "self (regression baseline)"},
+    {"metric": "dcma:DCMA-01:status", "expected": "FAIL", "source": "self (regression baseline)"},
+    {"metric": "dcma:DCMA-01:measured", "expected": 50.0, "tolerance": 0.0, "source": "self (regression baseline)"},
+    {"metric": "dcma:DCMA-04:status", "expected": "PASS", "source": "self (regression baseline)"},
+    {"metric": "dcma:DCMA-04:measured", "expected": 100.0, "tolerance": 0.0, "source": "self (regression baseline)"},
+    {"metric": "dcma:DCMA-07:status", "expected": "PASS", "source": "self (regression baseline)"},
+    {"metric": "dcma:DCMA-12:status", "expected": "PASS", "source": "self (regression baseline)"},
+    {"metric": "index:SPI:status", "expected": "SKIPPED", "source": "self (regression baseline)"}
+  ]
+}

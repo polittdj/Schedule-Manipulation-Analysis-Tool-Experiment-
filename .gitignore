@@ -15,6 +15,9 @@ session_data/
 uploads/
 exports/
 local_validation_results/
+# Real golden-parity cases live OUTSIDE the repo or here (CUI inputs, LAW 1):
+# never commit real reference cases; only synthetic/self cases under tests/fixtures.
+local_parity/
 
 # NOTE (deliberate deviation from the master directive's "*.json"): we do NOT
 # globally ignore *.json, because tracked config (e.g. .claude/settings.json,
