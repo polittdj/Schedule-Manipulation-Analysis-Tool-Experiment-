@@ -6,10 +6,12 @@ setlocal enableextensions
 
 rem -- Optional config (edit if you like) --
 if not defined SF_PORT set SF_PORT=5000
-rem To use a LOCAL Qwen-class model for polished summaries, start your local
-rem OpenAI-compatible server (llama.cpp / LM Studio / vLLM) first, then uncomment:
-rem set SF_LLM_BASE_URL=http://127.0.0.1:8080/v1
-rem set SF_LLM_MODEL=qwen
+rem Optional local AI-polished executive summaries (all loopback-only, CUI-safe):
+rem  * Easiest: install Ollama (https://ollama.com) and run "ollama pull llama3.2"
+rem    once; this launcher then auto-starts Ollama and uses it (override: SF_OLLAMA_MODEL).
+rem  * Or point at any local OpenAI-compatible server:
+rem    set SF_LLM_BASE_URL=http://127.0.0.1:8080/v1
+rem    set SF_LLM_MODEL=qwen
 
 rem -- Go to the repo root (this script lives in <repo>\launch) --
 cd /d "%~dp0.."
@@ -28,6 +30,20 @@ if not exist ".venv\Scripts\python.exe" (
   rem [com] adds pywin32 so the "MS Project (COM)" .mpp reader works on Windows.
   ".venv\Scripts\python.exe" -m pip install -e ".[com]" || goto :setupfail
 )
+
+rem -- Optional: local AI summaries via Ollama (auto-detected; loopback-only, CUI-safe). --
+rem Nothing is auto-downloaded; with no Ollama (or no pulled model) deterministic summaries are used.
+set "SF_OLLAMA_FOUND="
+where ollama >nul 2>&1 && set "SF_OLLAMA_FOUND=1"
+if defined SF_OLLAMA_FOUND (
+  curl -fsS http://127.0.0.1:11434/api/tags >nul 2>&1 || start "" /b ollama serve
+)
+if defined SF_OLLAMA_FOUND if not defined SF_OLLAMA_MODEL (
+  for /f "skip=1 tokens=1" %%m in ('ollama list 2^>nul') do (
+    if not defined SF_OLLAMA_MODEL set "SF_OLLAMA_MODEL=%%m"
+  )
+)
+if defined SF_OLLAMA_MODEL echo   AI summaries: ON ^(local Ollama model: %SF_OLLAMA_MODEL%^).
 
 echo.
 echo   Schedule Forensics is starting at http://127.0.0.1:%SF_PORT%

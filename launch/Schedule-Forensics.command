@@ -6,10 +6,11 @@ set -e
 
 # ── Optional config — edit these if you like ────────────────────────────────
 : "${SF_PORT:=5000}"                       # change if 5000 is busy (macOS AirPlay uses it)
-# To use a LOCAL Qwen-class model for polished summaries, uncomment + point these
-# at your local OpenAI-compatible server (llama.cpp / LM Studio / vLLM). Loopback only.
-# export SF_LLM_BASE_URL="http://127.0.0.1:8080/v1"
-# export SF_LLM_MODEL="qwen"
+# Optional local AI-polished executive summaries (all loopback-only, CUI-safe):
+#  • Easiest: install Ollama (https://ollama.com) and run 'ollama pull llama3.2' once;
+#    this launcher then auto-starts Ollama and uses it. Override with SF_OLLAMA_MODEL.
+#  • Or point at any local OpenAI-compatible server:
+#    # export SF_LLM_BASE_URL="http://127.0.0.1:8080/v1"; export SF_LLM_MODEL="qwen"
 export SF_PORT
 
 # ── Locate the repo (this script lives in <repo>/launch) ────────────────────
@@ -33,6 +34,9 @@ if [ ! -f "tools/mpxj/classes/MpxjToMspdi.class" ] \
   bash tools/mpxj/setup.sh \
     || echo "Note: MPXJ build failed; .mpp parsing unavailable (see docs/MPXJ.md)."
 fi
+
+# Optional local AI summaries via Ollama (auto-detected; CUI-safe). See docs/OLLAMA.md.
+. "$REPO/launch/_ollama.sh"
 
 URL="http://127.0.0.1:${SF_PORT}"
 echo "Starting Schedule Forensics at ${URL}"

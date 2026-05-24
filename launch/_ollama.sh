@@ -1,0 +1,35 @@
+#!/bin/bash
+# Sourced by the macOS/Linux launchers. Auto-detects a local Ollama install and,
+# if present, starts it and selects an already-pulled model so the executive
+# summary is AI-polished.
+#
+# CUI-safe (LAW 1): Ollama serves on loopback (127.0.0.1) only and the tool's
+# OllamaBackend refuses any non-loopback host. NOTHING is auto-downloaded — with
+# no Ollama (or no pulled model) the tool falls back to its deterministic summary.
+# Override the model by exporting SF_OLLAMA_MODEL before launch. See docs/OLLAMA.md.
+
+sf_setup_ollama() {
+  command -v ollama >/dev/null 2>&1 || return 0
+
+  # Start the local server if it is not already responding (backgrounded).
+  if ! curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    ( ollama serve >/dev/null 2>&1 & )
+    sleep 1
+  fi
+
+  # Use SF_OLLAMA_MODEL if the user set one; otherwise the first already-pulled
+  # model. Never auto-pull (that is a large, surprising download).
+  if [ -z "${SF_OLLAMA_MODEL:-}" ]; then
+    SF_OLLAMA_MODEL="$(ollama list 2>/dev/null | awk 'NR==2 {print $1; exit}' || true)"
+  fi
+
+  if [ -n "${SF_OLLAMA_MODEL:-}" ]; then
+    export SF_OLLAMA_MODEL
+    echo "AI summaries: ON (local Ollama model: ${SF_OLLAMA_MODEL})."
+  else
+    echo "Ollama is installed but no model is pulled — using deterministic summaries."
+    echo "  Run 'ollama pull llama3.2' once to enable AI-polished summaries."
+  fi
+}
+
+sf_setup_ollama

@@ -37,14 +37,21 @@ cp ~/.local/share/applications/schedule-forensics.desktop ~/Desktop/   # optiona
 ```
 Then launch it from your apps menu or the Desktop icon.
 
+## AI-polished executive summaries (optional, automatic)
+- **Easiest — Ollama:** install [Ollama](https://ollama.com) and run
+  `ollama pull llama3.2` once. The macOS/Linux/Windows launchers then **auto-detect
+  Ollama, start it, and use it** to polish the executive summary (override the model
+  with `SF_OLLAMA_MODEL`). Nothing is auto-downloaded; with no Ollama — or no pulled
+  model — the tool uses its deterministic summary. See `docs/OLLAMA.md`.
+- **Or any local OpenAI-compatible server** (llama.cpp `llama-server`, LM Studio,
+  vLLM): set `SF_LLM_BASE_URL` (e.g. `http://127.0.0.1:8080/v1`) + `SF_LLM_MODEL`
+  in the launcher header.
+- **Loopback only** — a non-local URL/host is refused (LAW 1), and the model only
+  *rephrases* the summary (it never changes a number). If it's unreachable, the tool
+  falls back to the deterministic summary automatically.
+
 ## Options (all launchers have an editable header)
 - **Port:** set `SF_PORT` (default `5000`; handy if 5000 is busy, e.g. macOS AirPlay).
-- **Local Qwen model (optional):** to get AI-polished executive summaries, run a
-  local OpenAI-compatible server (llama.cpp `llama-server`, LM Studio, or vLLM)
-  hosting your Qwen 32B Q4_K_M, then uncomment/set `SF_LLM_BASE_URL`
-  (e.g. `http://127.0.0.1:8080/v1`) and `SF_LLM_MODEL` in the launcher. **Loopback
-  only** — a non-local URL is refused (LAW 1). If the model server isn't running,
-  the tool falls back to the deterministic summary automatically.
 
 `icon.svg` is the shared artwork (a schedule chart under a magnifier). It's vector;
 convert to `.ico` (Windows) / `.png` (Linux/macOS) with any converter if you want
