@@ -11,9 +11,14 @@ Backends
 * :class:`NullInferenceBackend` -- the DEFAULT. No model, fully local,
   deterministic (returns the factual narrative unchanged). The whole tool works
   and is testable with zero model present.
-* :class:`OllamaBackend` -- local Ollama (CUI-safe). Its actual model call is the
-  Phase-7 human-in-loop wiring step (not wired here); ``summarize`` raises until
-  then. It is ``is_local = True`` so it is reachable under CUI.
+* :class:`OllamaBackend` -- local Ollama via its native ``/api/chat`` (CUI-safe,
+  loopback-enforced). ``is_local = True`` so it is reachable under CUI; if the
+  server/model is unavailable, ``summarize`` raises and the caller falls back to
+  the deterministic narrative. Selected by ``SF_OLLAMA_MODEL`` (see
+  :func:`backend_from_env`).
+* :class:`LocalOpenAIBackend` -- any local OpenAI-compatible server (llama.cpp /
+  LM Studio / vLLM / Ollama's ``/v1``); loopback-enforced. Selected by
+  ``SF_LLM_BASE_URL``.
 * :class:`UnclassifiedClaudeBackend` -- NETWORK. ``is_local = False``. Usable only
   when classification is explicitly ``UNCLASSIFIED``; hard-gated off by default
   and never reachable under CUI (see :func:`select_backend`).
@@ -74,24 +79,67 @@ class NullInferenceBackend:
 
 
 class OllamaBackend:
-    """Local Ollama backend (CUI-safe). Wiring is the Phase-7 human checkpoint.
+    """Rephrase via a LOCAL Ollama server (CUI-safe), Ollama's native ``/api/chat``.
 
-    Constructing it is fine; the actual local model call is deferred. Until wired,
-    ``summarize`` raises rather than silently returning a non-summary.
+    The host MUST be loopback (enforced in ``__init__`` via :func:`_require_loopback`),
+    so ``is_local = True`` is truthful and the backend is reachable under CUI while
+    structurally unable to egress. The model only rephrases the deterministic
+    narrative; it never sources numbers (H-DRIFT-1). Standard library only -- the
+    single network call is to loopback. If the Ollama server is not reachable (or
+    the model is not pulled), ``summarize`` raises :class:`InferenceError` so the
+    caller falls back to the deterministic narrative (never errors the user out).
     """
 
     name = "ollama"
     is_local = True
 
-    def __init__(self, model: str = "llama3:8b", host: str = "127.0.0.1:11434") -> None:
+    def __init__(
+        self,
+        model: str = "llama3.2",
+        host: str = "127.0.0.1:11434",
+        *,
+        timeout: float = 120.0,
+    ) -> None:
+        # host is "h:port" (no scheme); validate via a synthesized URL so loopback
+        # enforcement is shared with LocalOpenAIBackend (LAW 1, fail closed).
+        self.base_url = _require_loopback(f"http://{host}").rstrip("/")
         self.model = model
-        self.host = host
+        self.timeout = timeout
 
     def summarize(self, narrative: str) -> str:
-        raise InferenceError(
-            "OllamaBackend is not wired yet (Phase-7 human-in-loop model setup). "
-            "Use NullInferenceBackend until the local model is connected."
+        payload = json.dumps(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": _REPHRASE_SYSTEM},
+                    {"role": "user", "content": narrative},
+                ],
+                "stream": False,
+                "options": {"temperature": 0.2},
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.base_url}/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                body = response.read()
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise InferenceError(
+                f"Ollama server not reachable at {self.base_url} ({exc}). Start it with "
+                "'ollama serve' and 'ollama pull <model>', or use NullInferenceBackend."
+            ) from exc
+        try:
+            data = json.loads(body)
+            content = data["message"]["content"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise InferenceError(f"unexpected response from Ollama: {exc}") from exc
+        if not isinstance(content, str) or not content.strip():
+            raise InferenceError("Ollama returned an empty completion")
+        return content
 
 
 class UnclassifiedClaudeBackend:
@@ -132,7 +180,7 @@ def _require_loopback(base_url: str) -> str:
     host = urlsplit(base_url).hostname
     if host is None or host.lower() not in _LOOPBACK_HOSTS:
         raise ClassificationError(
-            f"LocalOpenAIBackend base_url host {host!r} is not loopback; only "
+            f"local inference backend host {host!r} is not loopback; only "
             "127.0.0.1/localhost/::1 is allowed so CUI schedule data never leaves the "
             "machine (LAW 1)."
         )
@@ -225,19 +273,30 @@ LLM_BASE_URL_ENV = "SF_LLM_BASE_URL"  # e.g. http://127.0.0.1:8080/v1 (loopback 
 LLM_MODEL_ENV = "SF_LLM_MODEL"  # e.g. qwen2.5-32b-instruct-q4_k_m
 _DEFAULT_LLM_MODEL = "qwen2.5-32b-instruct-q4_k_m"
 
+# Environment knobs for a local Ollama server (its native API).
+OLLAMA_MODEL_ENV = "SF_OLLAMA_MODEL"  # e.g. llama3.2 -- presence selects Ollama
+OLLAMA_HOST_ENV = "SF_OLLAMA_HOST"  # e.g. 127.0.0.1:11434 (loopback only)
+_DEFAULT_OLLAMA_HOST = "127.0.0.1:11434"
+
 
 def backend_from_env(env: Mapping[str, str] | None = None) -> InferenceBackend:
     """Pick a backend from the environment -- LAW 1 safe, default deterministic.
 
-    If ``SF_LLM_BASE_URL`` is set, return a :class:`LocalOpenAIBackend` pointed at
-    it (the host is loopback-enforced by the backend; a non-local URL raises) with
-    ``SF_LLM_MODEL`` (default a Qwen-class GGUF name). Otherwise return the
-    deterministic :class:`NullInferenceBackend`. A network backend is NEVER selected
-    automatically -- that stays an explicit, UNCLASSIFIED-only choice.
+    Precedence (all local; a network backend is NEVER selected automatically):
+
+    1. ``SF_LLM_BASE_URL`` set -> :class:`LocalOpenAIBackend` at that loopback URL
+       (a non-local URL raises) with ``SF_LLM_MODEL`` (default a Qwen-class name).
+    2. ``SF_OLLAMA_MODEL`` set -> :class:`OllamaBackend` for that model on
+       ``SF_OLLAMA_HOST`` (default ``127.0.0.1:11434``; loopback-enforced).
+    3. otherwise -> the deterministic :class:`NullInferenceBackend`.
     """
     source = os.environ if env is None else env
     base_url = source.get(LLM_BASE_URL_ENV)
-    if not base_url:
-        return NullInferenceBackend()
-    model = source.get(LLM_MODEL_ENV) or _DEFAULT_LLM_MODEL
-    return LocalOpenAIBackend(base_url=base_url, model=model)
+    if base_url:
+        model = source.get(LLM_MODEL_ENV) or _DEFAULT_LLM_MODEL
+        return LocalOpenAIBackend(base_url=base_url, model=model)
+    ollama_model = source.get(OLLAMA_MODEL_ENV)
+    if ollama_model:
+        host = source.get(OLLAMA_HOST_ENV) or _DEFAULT_OLLAMA_HOST
+        return OllamaBackend(model=ollama_model, host=host)
+    return NullInferenceBackend()

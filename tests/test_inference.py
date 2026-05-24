@@ -43,11 +43,6 @@ def test_unclassified_allows_network_backend() -> None:
     assert backend.is_local is False
 
 
-def test_ollama_summarize_not_wired_raises() -> None:
-    with pytest.raises(InferenceError, match="not wired"):
-        OllamaBackend().summarize("narrative")
-
-
 def test_claude_summarize_not_wired_raises() -> None:
     with pytest.raises(InferenceError):
         UnclassifiedClaudeBackend().summarize("narrative")
