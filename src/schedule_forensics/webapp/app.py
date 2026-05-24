@@ -130,79 +130,141 @@ _TEMPLATE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Schedule Forensics — Local Analysis Tool</title>
 <style>
-  /* All styles inline — no external CDN (LAW 1 compliance). */
+  /* All styles inline — no external CDN / web fonts (LAW 1 compliance). */
+  /* ── Dark theme palette (CSS variables; inline styles reference these too) ── */
+  :root {
+    --bg: #0d1117; --bg-grad: #0a0e14;
+    --surface: #161b22; --surface-2: #1b2230; --surface-3: #21283400;
+    --border: #2b3441; --border-soft: #232b36;
+    --text: #e6edf3; --text-dim: #aeb9c5; --text-muted: #7d8896;
+    --accent: #4a9eff; --accent-hover: #6cb0ff; --accent-strong: #1f6feb;
+    --ok-bg: #102a1a; --ok-text: #57d364; --ok-bd: #2ea043;
+    --bad-bg: #2c1316; --bad-text: #ff7b72; --bad-bd: #da3633;
+    --warn-bg: #2e2510; --warn-text: #e3b341; --warn-bd: #9e6a03;
+    --ext-bg: #241a3a; --ext-text: #cdb4fb; --ext-bd: #5a3aa0;
+    --shadow: 0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
+  }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 14px;
-         background: #f4f6f8; color: #222; }
-
-  /* CUI banner — always visible, above all content */
-  .cui-banner {
-    background: #ffd700; border-bottom: 3px solid #b8860b;
-    padding: 10px 20px; font-weight: bold; color: #5a3e00;
-    font-size: 13px; text-align: center;
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+                 sans-serif; font-size: 14px; line-height: 1.5;
+    color: var(--text);
+    background: radial-gradient(1200px 600px at 50% -10%, #11202f 0%, var(--bg) 45%) no-repeat,
+                var(--bg-grad);
+    background-attachment: fixed; -webkit-font-smoothing: antialiased;
   }
 
-  /* Page wrapper */
-  .page { max-width: 1100px; margin: 0 auto; padding: 20px; }
-  h1 { font-size: 22px; margin-bottom: 6px; color: #1a2a3a; }
-  h2 { font-size: 17px; margin: 20px 0 8px; color: #1a2a3a;
-       border-bottom: 1px solid #c8d0da; padding-bottom: 4px; }
-  h3 { font-size: 15px; margin: 14px 0 6px; color: #2c4a6a; }
+  /* CUI banner — always visible, above all content (compliance marker) */
+  .cui-banner {
+    background: linear-gradient(180deg, #e3b341 0%, #c9971f 100%);
+    border-bottom: 2px solid #7a5a06; color: #1a1205;
+    padding: 9px 20px; font-weight: 700; font-size: 12.5px; text-align: center;
+    letter-spacing: .2px; text-shadow: 0 1px 0 rgba(255,255,255,.25);
+  }
+
+  /* Page wrapper + app header */
+  .page { max-width: 1120px; margin: 0 auto; padding: 26px 22px 56px; }
+  .app-header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .app-mark { width: 38px; height: 38px; border-radius: 9px; flex: none;
+    background: linear-gradient(150deg, #1f6feb, #4a9eff); position: relative;
+    box-shadow: 0 2px 10px rgba(31,111,235,.45); }
+  .app-mark::before { content: ""; position: absolute; inset: 10px 9px;
+    border: 2.5px solid #eaf2fb; border-radius: 50%; width: 16px; height: 16px; }
+  .app-mark::after { content: ""; position: absolute; right: 7px; bottom: 7px;
+    width: 9px; height: 2.5px; background: #eaf2fb; transform: rotate(45deg); border-radius: 2px; }
+  h1 { font-size: 21px; font-weight: 650; letter-spacing: -.2px; color: var(--text); }
+  .app-subtitle { color: var(--text-muted); font-size: 12.5px; margin-bottom: 22px; }
+  .pill-offline { display: inline-block; margin-left: 10px; padding: 2px 9px; font-size: 11px;
+    font-weight: 600; color: var(--ok-text); background: var(--ok-bg);
+    border: 1px solid var(--ok-bd); border-radius: 20px; vertical-align: middle;
+    letter-spacing: .3px; }
+  h2 { font-size: 16px; font-weight: 620; margin: 26px 0 12px; color: var(--text);
+       padding-bottom: 7px; border-bottom: 1px solid var(--border); letter-spacing: -.1px; }
+  h3 { font-size: 14.5px; font-weight: 620; margin: 2px 0 10px; color: var(--text); }
+  h4 { font-size: 12.5px; font-weight: 650; margin: 18px 0 6px; color: var(--text-dim);
+       text-transform: uppercase; letter-spacing: .6px; }
+
+  /* Cards */
+  .card { background: linear-gradient(180deg, var(--surface) 0%, #13181f 100%);
+          border: 1px solid var(--border); border-radius: 12px;
+          padding: 20px 22px; margin-bottom: 18px; box-shadow: var(--shadow); }
 
   /* Forms */
-  .card { background: #fff; border: 1px solid #d0d8e0; border-radius: 6px;
-          padding: 20px; margin-bottom: 20px; }
-  label { display: block; margin-bottom: 4px; font-weight: bold; color: #333; }
-  textarea { width: 100%; font-family: monospace; font-size: 12px; padding: 8px;
-             border: 1px solid #b0bcc8; border-radius: 4px; resize: vertical; }
-  input[type="file"] { margin: 4px 0; }
-  .btn { display: inline-block; padding: 8px 18px; border: none; border-radius: 4px;
-         cursor: pointer; font-size: 14px; font-weight: bold; text-decoration: none; }
-  .btn-primary { background: #1a6bbf; color: #fff; }
-  .btn-primary:hover { background: #155090; }
-  .btn-danger  { background: #c0392b; color: #fff; }
-  .btn-danger:hover  { background: #922b21; }
-  .btn-download { background: #2e7d32; color: #fff; }
-  .btn-download:hover { background: #1b5e20; }
+  label { display: block; margin-bottom: 5px; font-weight: 600; color: var(--text-dim); }
+  textarea {
+    width: 100%; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; padding: 10px 12px; color: var(--text); background: #0c1118;
+    border: 1px solid var(--border); border-radius: 8px; resize: vertical; }
+  textarea:focus, input:focus-visible { outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(74,158,255,.18); }
+  textarea::placeholder { color: #56606c; }
+  input[type="file"] { margin: 6px 0; color: var(--text-dim); font-size: 13px; }
+  input[type="file"]::file-selector-button {
+    margin-right: 12px; padding: 7px 13px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--surface-2); color: var(--text); font-weight: 600; cursor: pointer; }
+  input[type="file"]::file-selector-button:hover {
+    border-color: var(--accent); color: var(--accent-hover); }
+  fieldset { border: 1px solid var(--border) !important; border-radius: 9px; background: #0f141b; }
+  legend { color: var(--text-dim) !important; }
+  .btn { display: inline-block; padding: 9px 18px; border: 1px solid transparent;
+         border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 650;
+         text-decoration: none; transition: background .12s, border-color .12s, transform .04s; }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--accent-strong); color: #fff; }
+  .btn-primary:hover { background: #2b7df0; }
+  .btn-danger  { background: transparent; color: var(--bad-text); border-color: var(--bad-bd); }
+  .btn-danger:hover  { background: var(--bad-bg); }
+  .btn-download { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  .btn-download:hover { border-color: var(--accent); color: var(--accent-hover); }
   .btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
 
   /* Error box */
-  .error-box { background: #fde8e8; border: 1px solid #e74c3c; border-radius: 4px;
-               padding: 12px 16px; margin-bottom: 16px; color: #7b1c1c; }
+  .error-box { background: var(--bad-bg); border: 1px solid var(--bad-bd); border-radius: 9px;
+               padding: 12px 16px; margin-bottom: 16px; color: var(--bad-text); }
 
   /* Health band */
-  .band { display: inline-block; padding: 4px 14px; border-radius: 12px;
-          font-weight: bold; font-size: 16px; letter-spacing: 1px; }
-  .band-GREEN  { background: #c8f0c8; color: #145214; border: 1px solid #4caf50; }
-  .band-YELLOW { background: #fff3cd; color: #7a5800; border: 1px solid #f0ad4e; }
-  .band-RED    { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+  .band { display: inline-block; padding: 4px 15px; border-radius: 20px;
+          font-weight: 700; font-size: 14px; letter-spacing: 1px; }
+  .band-GREEN  { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-bd); }
+  .band-YELLOW { background: var(--warn-bg); color: var(--warn-text);
+                 border: 1px solid var(--warn-bd); }
+  .band-RED    { background: var(--bad-bg); color: var(--bad-text);
+                 border: 1px solid var(--bad-bd); }
 
-  /* Metric table */
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
-  th { background: #2c4a6a; color: #fff; padding: 7px 10px; text-align: left; }
-  td { padding: 6px 10px; border-bottom: 1px solid #e0e8f0; vertical-align: top; }
-  tr:nth-child(even) td { background: #f7f9fb; }
-  .status-PASS { background: #c8f0c8; color: #145214; font-weight: bold;
-                 padding: 2px 8px; border-radius: 10px; }
-  .status-FAIL { background: #f8d7da; color: #721c24; font-weight: bold;
-                 padding: 2px 8px; border-radius: 10px; }
-  .status-SKIPPED { background: #fff3cd; color: #7a5800; font-weight: bold;
-                    padding: 2px 8px; border-radius: 10px; }
-  .ext-tag { background: #e2d9f3; color: #4a235a; font-size: 11px;
-             padding: 1px 6px; border-radius: 8px; }
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;
+          border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th { background: var(--surface-2); color: var(--text-dim); padding: 9px 12px; text-align: left;
+       font-weight: 650; font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px;
+       border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top;
+       color: var(--text-dim); }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:nth-child(even) td { background: rgba(255,255,255,.018); }
+  tbody tr:hover td { background: rgba(74,158,255,.07); }
+  .status-PASS, .status-FAIL, .status-SKIPPED { font-weight: 650; font-size: 11.5px;
+    padding: 2px 9px; border-radius: 20px; display: inline-block; border: 1px solid; }
+  .status-PASS { background: var(--ok-bg);  color: var(--ok-text);  border-color: var(--ok-bd); }
+  .status-FAIL { background: var(--bad-bg); color: var(--bad-text); border-color: var(--bad-bd); }
+  .status-SKIPPED { background: var(--warn-bg); color: var(--warn-text);
+                    border-color: var(--warn-bd); }
+  .ext-tag { background: var(--ext-bg); color: var(--ext-text); border: 1px solid var(--ext-bd);
+             font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 8px; }
 
   /* Summary grid */
-  .summary-grid { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; }
-  .sg-label { font-weight: bold; color: #555; }
-  .sg-value { color: #111; word-break: break-word; }
+  .summary-grid { display: grid; grid-template-columns: 220px 1fr; gap: 7px 14px; }
+  .sg-label { font-weight: 600; color: var(--text-muted); }
+  .sg-value { color: var(--text); word-break: break-word; }
 
   /* Exec summary */
-  .exec-pre { background: #f0f4f8; border: 1px solid #c8d4e0; border-radius: 4px;
-              padding: 14px; font-family: monospace; font-size: 12px;
+  .exec-pre { background: #0c1118; border: 1px solid var(--border); border-radius: 9px;
+              padding: 16px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+              font-size: 12px; line-height: 1.6; color: var(--text-dim);
               white-space: pre-wrap; word-wrap: break-word; }
 
   /* Divider */
-  .divider { border: none; border-top: 2px solid #c8d0da; margin: 24px 0; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 30px 0; }
+  a { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -211,9 +273,14 @@ _TEMPLATE = """<!DOCTYPE html>
 <div class="cui-banner" id="cui-notice">{{ cui_notice }}</div>
 
 <div class="page">
-  <h1>Schedule Forensics &mdash; Local Analysis Tool</h1>
-  <p style="color:#555;margin-bottom:16px;">
-    All processing is performed locally on this machine. No data is transmitted externally.
+  <div class="app-header">
+    <div class="app-mark" aria-hidden="true"></div>
+    <h1>Schedule Forensics<span class="pill-offline">&#9679; LOCAL &middot; 127.0.0.1</span></h1>
+  </div>
+  <p class="app-subtitle">
+    Forensic schedule analysis &mdash; DCMA-14, critical &amp; driving path, Monte-Carlo risk,
+    and multi-version comparison. All processing stays on this machine; nothing is transmitted
+    externally.
   </p>
 
   {% if error %}
@@ -234,8 +301,8 @@ _TEMPLATE = """<!DOCTYPE html>
                accept=".mpp,.mpx,.xer,.xml" multiple>
       </div>
       <fieldset
-        style="margin-bottom:14px;border:1px solid #d0d8e0;border-radius:4px;padding:10px 14px;">
-        <legend style="font-weight:bold;color:#333;padding:0 6px;">
+        style="margin-bottom:14px;padding:10px 14px;">
+        <legend style="font-weight:bold;color:var(--text-dim);padding:0 6px;">
           Native .mpp / .mpx reader</legend>
         <label style="font-weight:normal;display:block;margin-bottom:4px;">
           <input type="radio" name="mpp_reader" value="{{ mpxj_reader }}"
@@ -247,7 +314,7 @@ _TEMPLATE = """<!DOCTYPE html>
                  {{ "checked" if mpp_reader == com_reader else "" }}>
           <strong>MS Project</strong> (COM automation &mdash; Windows + installed MS Project only)
         </label>
-        <p style="font-size:11px;color:#777;margin-top:6px;">
+        <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
           This choice applies only to native .mpp / .mpx files; .xer and MS Project XML
           ignore it. MPXJ runs a local Java converter; MS Project (COM) drives your
           installed MS Project. Both are fully local &mdash; nothing leaves this machine (LAW 1).
@@ -312,7 +379,7 @@ _TEMPLATE = """<!DOCTYPE html>
         {% endfor %}
       </tbody>
     </table>
-    <p style="font-size:11px;color:#777;margin-top:6px;">
+    <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
       CEI (PASEG 10.4.5): tasks finished &divide; tasks forecast to finish, per period;
       &ge;0.95 gate (source-pending/VERIFY). The period-start snapshot is reconstructed
       from the prior version (tool-original capture method).
@@ -385,7 +452,7 @@ _TEMPLATE = """<!DOCTYPE html>
       </tbody>
     </table>
     {% endif %}
-    <p style="font-size:11px;color:#777;margin-top:6px;">
+    <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
       <span class="ext-tag">ext</span> Trend Analysis is a tool-original extension
       (the cross-version trajectory framing and float-erosion bands); the per-version
       finish and health values are objective, but the trend layer is not reference-tool parity.
@@ -396,7 +463,7 @@ _TEMPLATE = """<!DOCTYPE html>
   {% if diffs %}
   <div class="card">
     <h3>Version-to-Version Changes</h3>
-    <p style="color:#555;margin-bottom:8px;">
+    <p style="color:var(--text-dim);margin-bottom:8px;">
       Objective deltas between consecutive status updates (tasks matched by UniqueID).
       Date and float shifts are in working days; a positive finish shift means the task moved later.
     </p>
@@ -432,14 +499,15 @@ _TEMPLATE = """<!DOCTYPE html>
       </tbody>
     </table>
     {% if d.n_notable > d.top_changes|length %}
-    <p style="font-size:11px;color:#777;">Showing the {{ d.top_changes|length }} largest of
+    <p style="font-size:11px;color:var(--text-muted);">
+      Showing the {{ d.top_changes|length }} largest of
       {{ d.n_notable }} changed activities.</p>
     {% endif %}
     {% else %}
-    <p style="color:#555;">No task-level changes between these versions.</p>
+    <p style="color:var(--text-dim);">No task-level changes between these versions.</p>
     {% endif %}
     {% endfor %}
-    <p style="font-size:11px;color:#777;margin-top:6px;">
+    <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
       Objective version deltas (the Acumen ProjectTimeNow / ProjectPreviousTimeNow comparative
       pattern) &mdash; measured facts, not a score; no threshold is applied.
     </p>
@@ -508,7 +576,7 @@ _TEMPLATE = """<!DOCTYPE html>
 
       {% if analysis.cpm_error %}
       <span class="sg-label">CPM Error:</span>
-      <span class="sg-value" style="color:#c0392b;">{{ analysis.cpm_error }}</span>
+      <span class="sg-value" style="color:var(--bad-text);">{{ analysis.cpm_error }}</span>
       {% endif %}
     </div>
   </div>
@@ -548,12 +616,12 @@ _TEMPLATE = """<!DOCTYPE html>
           <td><span class="status-{{ m.status }}">{{ m.status }}</span></td>
           <td>{{ m.measured if m.measured is not none else "" }}</td>
           <td>{{ m.threshold if m.threshold is not none else "" }}</td>
-          <td style="font-size:11px;color:#555;">{{ m.source }}</td>
+          <td style="font-size:11px;color:var(--text-dim);">{{ m.source }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-    <p style="font-size:11px;color:#777;margin-top:6px;">
+    <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
       <span class="ext-tag">ext</span> = tool-original extension; not reference-tool parity
       (DCMA-14 standard only; Acumen/SSI parity is claimed only for non-ext rows).
     </p>
@@ -581,12 +649,12 @@ _TEMPLATE = """<!DOCTYPE html>
           <td><span class="status-{{ m.status }}">{{ m.status }}</span></td>
           <td>{{ "%.4f"|format(m.measured) if m.measured is not none else "" }}</td>
           <td>{{ m.threshold if m.threshold is not none else "" }}</td>
-          <td style="font-size:11px;color:#555;">{{ m.source }}</td>
+          <td style="font-size:11px;color:var(--text-dim);">{{ m.source }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-    <p style="font-size:11px;color:#777;margin-top:6px;">
+    <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
       Earned-value indices need schedule data with budgeted cost + baseline dates;
       otherwise they are <strong>SKIPPED</strong> (never fabricated). The 0.95
       threshold is a common EVM management level, not a DCMA-14 number.
@@ -597,7 +665,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <!-- Schedule Risk Analysis (Monte Carlo) -->
   <div class="card">
     <h3>Schedule Risk Analysis (Monte Carlo)</h3>
-    <p style="color:#555;margin-bottom:8px;">
+    <p style="color:var(--text-dim);margin-bottom:8px;">
       {{ sra.iterations }} iterations over per-activity duration uncertainty
       (re-running the CPM each trial). Finish values are in working days.
     </p>
@@ -626,9 +694,9 @@ _TEMPLATE = """<!DOCTYPE html>
       </tbody>
     </table>
     {% else %}
-    <p style="color:#555;">No activity reached the critical path in any iteration.</p>
+    <p style="color:var(--text-dim);">No activity reached the critical path in any iteration.</p>
     {% endif %}
-    <p style="font-size:11px;color:#777;margin-top:6px;">
+    <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
       The SRA method (finish distribution + criticality index) mirrors Acumen Fuse
       / Primavera Risk Analysis (reference parity). The default duration spread that
       seeds it is the tool's own heuristic (source&#8209;pending) &mdash; in an engagement
@@ -640,7 +708,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <!-- SRA skipped (e.g. schedule too large for the in-browser Monte-Carlo run) -->
   <div class="card">
     <h3>Schedule Risk Analysis (Monte Carlo)</h3>
-    <p style="color:#555;">{{ sra_note }}</p>
+    <p style="color:var(--text-dim);">{{ sra_note }}</p>
   </div>
   {% endif %}{# end SRA #}
 
@@ -657,7 +725,7 @@ _TEMPLATE = """<!DOCTYPE html>
         <button type="submit" class="btn btn-danger">Wipe Session Data</button>
       </form>
     </div>
-    <p style="font-size:12px;color:#777;margin-top:8px;">
+    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">
       Wipe destroys all in-memory uploaded, parsed, and derived data.
       No data is stored on disk by this tool.
     </p>
