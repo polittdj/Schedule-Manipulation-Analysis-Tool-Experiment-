@@ -63,16 +63,47 @@ def test_build_command_from_home() -> None:
     assert cmd[3:] == ["MpxjToMspdi", "IN", "OUT"]
 
 
+def test_build_command_autodiscovers_default_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With no SF_MPXJ_* env var, a built default tools/mpxj install is found and used
+    # (the zero-config path that makes the web UI read .mpp out of the box).
+    monkeypatch.setattr(
+        "schedule_forensics.importers.mpp_mpxj._default_mpxj_home", lambda: "/auto/mpxj"
+    )
+    cmd = _build_command("IN", "OUT", {})
+    assert cmd[:2] == ["java", "-cp"]
+    assert "/auto/mpxj/classes" in cmd[2] and "/auto/mpxj/lib/*" in cmd[2]
+    assert cmd[3:] == ["MpxjToMspdi", "IN", "OUT"]
+
+
+def test_explicit_home_env_overrides_autodiscovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "schedule_forensics.importers.mpp_mpxj._default_mpxj_home", lambda: "/auto/mpxj"
+    )
+    cmd = _build_command("IN", "OUT", {"SF_MPXJ_HOME": "/explicit/mpxj"})
+    assert "/explicit/mpxj/classes" in cmd[2]
+    assert "/auto" not in cmd[2]
+
+
 def test_build_command_template_missing_tokens_raises() -> None:
     with pytest.raises(ImporterError, match="placeholders"):
         _build_command("IN", "OUT", {"SF_MPXJ_CMD": "java -jar x.jar"})
 
 
-def test_mpxj_configured_reflects_env() -> None:
+def test_mpxj_configured_reflects_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Disable auto-discovery so this asserts the env-runner reflection specifically.
+    monkeypatch.setattr("schedule_forensics.importers.mpp_mpxj._default_mpxj_home", lambda: None)
     assert mpxj_configured({"SF_MPXJ_JAR": "x.jar"}) is True
     assert mpxj_configured({"SF_MPXJ_CMD": "java {input} {output}"}) is True
     assert mpxj_configured({"SF_MPXJ_HOME": "/opt/mpxj"}) is True
     assert mpxj_configured({}) is False
+
+
+def test_mpxj_configured_true_when_default_home_built(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A built default install makes MPXJ usable even with no env var set.
+    monkeypatch.setattr(
+        "schedule_forensics.importers.mpp_mpxj._default_mpxj_home", lambda: "/auto/mpxj"
+    )
+    assert mpxj_configured({}) is True
 
 
 # ── hermetic end-to-end via a stub converter ──────────────────────────────────
@@ -91,8 +122,11 @@ def test_stub_converter_roundtrips_to_schedule(
 
 
 def test_unconfigured_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("SF_MPXJ_CMD", raising=False)
-    monkeypatch.delenv("SF_MPXJ_JAR", raising=False)
+    for var in ("SF_MPXJ_CMD", "SF_MPXJ_JAR", "SF_MPXJ_HOME"):
+        monkeypatch.delenv(var, raising=False)
+    # Disable auto-discovery so this asserts the truly-unconfigured fail-closed path
+    # regardless of whether the dev machine has a built tools/mpxj install.
+    monkeypatch.setattr("schedule_forensics.importers.mpp_mpxj._default_mpxj_home", lambda: None)
     with pytest.raises(ImporterError, match="not configured"):
         parse_mpp(_dummy_mpp(tmp_path))
 
