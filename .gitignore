@@ -45,6 +45,9 @@ build/
 dist/
 *.log
 
-# --- MPXJ local install (produced by tools/mpxj/setup.sh; not source) ---
-tools/mpxj/lib/
-tools/mpxj/classes/
+# --- MPXJ runner: the prebuilt MPXJ jars + compiled MpxjToMspdi converter ARE
+#     committed so native .mpp parsing works with ONLY a Java runtime (no Maven,
+#     no build step). Exception: the ~14 MB P6-SQLite driver is NOT committed
+#     (it is only used for Primavera P6 SQLite, never for .mpp); a local
+#     tools/mpxj/setup.* re-run would re-fetch it, but it stays out of git. ---
+tools/mpxj/lib/sqlite-jdbc*.jar

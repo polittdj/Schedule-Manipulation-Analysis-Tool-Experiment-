@@ -44,12 +44,16 @@ _JAR_ENV = "SF_MPXJ_JAR"
 _HOME_ENV = "SF_MPXJ_HOME"  # dir with classes/ + lib/ produced by tools/mpxj/setup.sh
 _DEFAULT_TIMEOUT_S = 120.0
 
-# Message shown when no MPXJ runner is configured (kept user-actionable).
+# Message shown when no MPXJ runner is found (kept user-actionable). The runner is
+# bundled in tools/mpxj, so normally only a Java runtime is missing; this message
+# only appears if those bundled files are absent.
 _NOT_CONFIGURED = (
-    f"native .mpp parsing needs MPXJ (Java). Run tools/mpxj/setup.sh -- it builds into "
-    f"the default tools/mpxj/ location, which this importer auto-discovers (no env var "
-    f"needed). For a custom install set {_HOME_ENV}, {_CMD_ENV} (a command template with "
-    f"{{input}}/{{output}}), or {_JAR_ENV} (a runnable MPXJ jar). See docs/MPXJ.md."
+    f"native .mpp parsing needs a Java runtime. The MPXJ runner is bundled in "
+    f"tools/mpxj (auto-discovered), so normally you only need to install a Java JRE "
+    f"(17+) and .mpp files parse directly. If the bundled runner is missing, rebuild "
+    f"it with tools/mpxj/setup.sh (setup.ps1 on Windows), or set {_HOME_ENV}, "
+    f"{_CMD_ENV} ({{input}}/{{output}} template), or {_JAR_ENV} (a runnable jar). "
+    f"See docs/MPXJ.md."
 )
 
 
@@ -143,8 +147,10 @@ def parse_mpp(
             )
         except FileNotFoundError as exc:
             raise ImporterError(
-                f"could not launch the MPXJ converter ({cmd[0]!r} not found). Is Java installed "
-                f"and is {_CMD_ENV}/{_JAR_ENV} correct?"
+                f"could not launch Java ({cmd[0]!r} not found). Native .mpp parsing needs a "
+                f"Java runtime: install a JRE 17+ (e.g. Adoptium Temurin) so 'java' is on PATH, "
+                f"then retry — the MPXJ runner itself is already bundled in tools/mpxj. "
+                f"(Advanced: set {_CMD_ENV}/{_JAR_ENV} to use a custom converter.)"
             ) from exc
         except subprocess.TimeoutExpired as exc:
             raise ImporterError(

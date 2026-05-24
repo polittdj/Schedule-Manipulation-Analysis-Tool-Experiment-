@@ -6,18 +6,28 @@ killable subprocess** that converts the file to MSPDI XML; the proven pure-Pytho
 `parse_msp_xml` then reads that. The JVM never runs inside the Python process
 (Commandment 1: **never in-process JPype**).
 
-MPXJ is an **optional runtime dependency** — like the Windows COM path, it is
-discovered at runtime and is **not bundled** (keeps the repo and CI lean). Once it
-is built into its default location (`tools/mpxj/`), the importer **auto-discovers
-it with no environment variable** — so the web UI and CLI read `.mpp` out of the
-box. If it is not built (and no `SF_MPXJ_*` override is set), `parse_mpp` raises
-`ImporterError` (fail closed); the rest of the tool is unaffected.
+The MPXJ runner is **bundled in the repo** (`tools/mpxj/lib/*.jar` + the compiled
+`tools/mpxj/classes/MpxjToMspdi.class`), so the only thing you need on your own
+machine is a **Java runtime (JRE 17+)** — no Maven, no build step, no internet.
+With a JRE present, the importer **auto-discovers `tools/mpxj/` (no environment
+variable)** and the web UI / CLI read `.mpp` out of the box. Without a JRE,
+`parse_mpp` raises `ImporterError` telling you to install one (fail closed); the
+rest of the tool is unaffected.
 
-> **Automated setup.** A `SessionStart` hook (`.claude/hooks/session-start.sh`)
-> builds MPXJ on the first Claude Code on the web session, and the one-click
-> launchers (`launch/`) build it on their first run. Both are idempotent, so in
-> practice `.mpp` parsing "just works" without any manual step. The manual
-> instructions below are for other environments or troubleshooting.
+(The ~14 MB Primavera-P6 SQLite driver is the one dependency NOT bundled — it is
+never used for `.mpp`; a `setup.*` re-run re-fetches it, but it stays out of git.)
+
+> **Install a Java runtime (the only prerequisite for `.mpp`):**
+> - **Windows:** install a JRE/JDK 17+ — e.g. Adoptium Temurin (https://adoptium.net);
+>   accept the "add to PATH" option, then restart the tool. `.mpp` uploads then work.
+>   Verify with `java -version` in a new PowerShell window.
+> - **macOS:** `brew install temurin` (or any JDK 17+).
+> - **Linux:** your distro's `default-jre` / `openjdk-17-jre`.
+
+> **Rebuilding the bundled runner** (only if the jars are missing or you want a
+> different MPXJ version) needs Java **and Maven** — see "Quick setup" below. A
+> `SessionStart` hook also rebuilds it in Claude Code web sessions. For normal use
+> on your machine you do **not** need this — the runner is already committed.
 
 > **LAW 1:** MPXJ runs locally and does no network I/O. The conversion writes a
 > temp MSPDI file that is deleted immediately after parsing; no schedule data
