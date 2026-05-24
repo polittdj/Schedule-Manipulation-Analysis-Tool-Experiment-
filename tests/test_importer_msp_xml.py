@@ -42,6 +42,32 @@ def test_parse_fixture_fields() -> None:
     assert all(task.constraint_type is ConstraintType.ASAP for task in schedule.tasks)
 
 
+def _minimal_mspdi(*, name: str | None, title: str | None) -> str:
+    name_el = f"<Name>{name}</Name>" if name is not None else ""
+    title_el = f"<Title>{title}</Title>" if title is not None else ""
+    return (
+        '<Project xmlns="http://schemas.microsoft.com/project">'
+        f"{name_el}{title_el}"
+        "<StartDate>2026-03-02T08:00:00</StartDate>"
+        "<Tasks><Task><UID>1</UID><Name>A</Name><Duration>PT8H0M0S</Duration></Task></Tasks>"
+        "</Project>"
+    )
+
+
+def test_project_name_prefers_title_over_filename_name() -> None:
+    # MPXJ writes the source file name into <Name> (e.g. "project.xml") and the real
+    # project title into <Title>; the human title must win.
+    schedule = parse_msp_xml_string(
+        _minimal_mspdi(name="project.xml", title="Commercial Construction")
+    )
+    assert schedule.name == "Commercial Construction"
+
+
+def test_project_name_falls_back_to_name_then_untitled() -> None:
+    assert parse_msp_xml_string(_minimal_mspdi(name="Only Name", title=None)).name == "Only Name"
+    assert parse_msp_xml_string(_minimal_mspdi(name=None, title=None)).name == "Untitled"
+
+
 def test_parse_fixture_relations() -> None:
     schedule = parse_msp_xml(FIXTURE)
     edges = {(r.predecessor_id, r.successor_id, r.type, r.lag_minutes) for r in schedule.relations}
