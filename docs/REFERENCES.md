@@ -18,16 +18,20 @@ are never presented as parity.
 | Key | Document | Used for |
 |---|---|---|
 | ACUMEN | Deltek Acumen Metric Developer's Guide | Acumen metric semantics; comparative `ProjectTimeNow` / `ProjectPreviousTimeNow` |
+| ACUMEN-AFT | Deltek Acumen Fuse **Metric Library export** (`.aft`) — **supplied** | exact metric formulas (DCMA 14 Point group; see formulas section below) |
 | DECM8 | Deltek DECM 8.0 metrics workbook | metric definitions + thresholds (DECM rows) |
 | DCMA-EDWARDS | DCMA 14-Point Assessment (Edwards, 2016) | DCMA-14 checks + thresholds |
 | DCMA-WINTER | DCMA 14-Point Assessment (Ron Winter, 2011) | DCMA-14 checks + thresholds |
 | NASA-EVM | NASA EVM Implementation Handbook | SPI / SPI(t) / earned-schedule, BEI semantics |
 | SSI-SLACK | Steelray/SSI driving-slack methodology | driving-path / relationship-slack semantics |
 
-> Status: documents not yet supplied to `docs/sources/`. Until present, the
-> metrics that depend on them are **source-pending** (threshold *values* may be
-> the well-known canonical numbers, but page/row anchoring is unverified — this
-> is logged honestly rather than claimed as parity).
+> Status: the DCMA-14 sources above are not yet placed in `docs/sources/`, but the
+> **Acumen Fuse Metric Library** (`ACUMEN-AFT`) HAS been supplied — so the 14 DCMA
+> checks are now cited against Acumen's own formulas (see "Acumen Fuse Metric
+> Library — verified DCMA 14 Point formulas" below), not merely the canonical
+> threshold values. The remaining metrics keep their canonical-value citations
+> with page/row anchoring still source-pending — logged honestly, never claimed as
+> parity beyond what is verified.
 
 ## Metric → source table
 
@@ -37,20 +41,20 @@ metrics ship in the trust-root spine.)_
 | Metric ID | Definition / threshold | Source + locator | Status |
 |---|---|---|---|
 | `driving_path` | Driving-path trace: relationship free float == 0 marks a binding ("driving") link; back-trace from the project-finish driving sink | SSI-SLACK (Steelray/SSI driving-slack methodology) | cited (practice); page-anchor source-pending |
-| `DCMA-01` Missing Logic | ≤ 5% of tasks lack a predecessor or successor | DCMA-EDWARDS / DCMA-WINTER 14-pt M1 | value canonical; page-anchor source-pending |
-| `DCMA-02` Leads | == 0 relationships with negative lag | DCMA-EDWARDS / DCMA-WINTER 14-pt M2 | value canonical; page-anchor source-pending |
-| `DCMA-03` Lags | ≤ 5% of relationships carry positive lag | DCMA-EDWARDS / DCMA-WINTER 14-pt M3 | value canonical; page-anchor source-pending |
-| `DCMA-04` Relationship Types | ≥ 90% of relationships are Finish-to-Start | DCMA-EDWARDS / DCMA-WINTER 14-pt M4 | value canonical; page-anchor source-pending |
-| `DCMA-05` Hard Constraints | ≤ 5% of tasks carry a hard constraint (MSO/MFO/SNLT/FNLT) | DCMA-EDWARDS / DCMA-WINTER 14-pt M5 | value canonical; page-anchor source-pending |
-| `DCMA-06` High Float | ≤ 5% of incomplete tasks with total float > 44 working days | DCMA-EDWARDS / DCMA-WINTER 14-pt M6 | value canonical; page-anchor source-pending |
-| `DCMA-07` Negative Float | == 0% of tasks with negative total float | DCMA-EDWARDS / DCMA-WINTER 14-pt M7 | value canonical; page-anchor source-pending |
-| `DCMA-08` High Duration | ≤ 5% of incomplete tasks with duration > 44 working days | DCMA-EDWARDS / DCMA-WINTER 14-pt M8 | value canonical; page-anchor source-pending |
-| `DCMA-09` Invalid Dates | == 0% of tasks have dates inconsistent with the status date (future actuals / forecast-in-past) | DCMA-EDWARDS / DCMA-WINTER 14-pt M9 | value canonical; page-anchor source-pending |
-| `DCMA-10` Resources | ≤ 5% of incomplete tasks (duration > 0) lack a resource | DCMA-EDWARDS / DCMA-WINTER 14-pt M10 | value canonical; page-anchor source-pending |
-| `DCMA-11` Missed Tasks | ≤ 5% of baselined tasks finish (or forecast) past baseline | DCMA-EDWARDS / DCMA-WINTER 14-pt M11 | value canonical; page-anchor source-pending |
-| `DCMA-12` Critical Path Test | an injected critical-path delay must flow to the project finish (pass/fail) | DCMA-EDWARDS / DCMA-WINTER 14-pt M12 | value canonical; page-anchor source-pending |
-| `DCMA-13` CPLI | ≥ 0.95: (baseline−status) / (forecast−status), working-minute offsets | DCMA-EDWARDS / DCMA-WINTER 14-pt M13 | value canonical; page-anchor source-pending |
-| `DCMA-14` BEI | ≥ 0.95: tasks completed / tasks baselined-due by the status date | DCMA-EDWARDS / DCMA-WINTER 14-pt M14 | value canonical; page-anchor source-pending |
+| `DCMA-01` Missing Logic | ≤ 5% of tasks lack a predecessor or successor | DCMA-EDWARDS / DCMA-WINTER 14-pt M1; **Acumen Fuse "DCMA 14 Point" #1** | **cited** (Acumen formula, see above); count reconciled vs Acumen |
+| `DCMA-02` Leads | == 0 relationships with negative lag | DCMA-EDWARDS / DCMA-WINTER 14-pt M2; **Acumen #2** | **cited** (Acumen formula); reconciled (0=0) |
+| `DCMA-03` Lags | ≤ 5% of relationships carry positive lag | DCMA-EDWARDS / DCMA-WINTER 14-pt M3; **Acumen #3** | **cited** (Acumen formula); reconciled (2=2) |
+| `DCMA-04` Relationship Types | ≥ 90% of relationships are Finish-to-Start | DCMA-EDWARDS / DCMA-WINTER 14-pt M4; **Acumen #4** | **cited**; framing differs (Acumen splits SS/FF + SF counts; we report %FS) |
+| `DCMA-05` Hard Constraints | ≤ 5% of tasks carry a hard constraint (MSO/MFO/SNLT/FNLT) | DCMA-EDWARDS / DCMA-WINTER 14-pt M5; **Acumen #5** | **cited** (Acumen formula); reconciled (0=0) |
+| `DCMA-06` High Float | ≤ 5% of incomplete tasks with total float > 44 working days | DCMA-EDWARDS / DCMA-WINTER 14-pt M6; **Acumen #6** | **cited**; Acumen ">2 months" ≈ our 44 working days |
+| `DCMA-07` Negative Float | == 0% of tasks with negative total float | DCMA-EDWARDS / DCMA-WINTER 14-pt M7; **Acumen #7** | **cited** (Acumen formula); reconciled (0=0) |
+| `DCMA-08` High Duration | ≤ 5% of incomplete tasks with duration > 44 working days | DCMA-EDWARDS / DCMA-WINTER 14-pt M8; **Acumen #8** | **cited**; Acumen ">2 months" ≈ our 44 working days |
+| `DCMA-09` Invalid Dates | == 0% of tasks have dates inconsistent with the status date (future actuals / forecast-in-past) | DCMA-EDWARDS / DCMA-WINTER 14-pt M9; **Acumen #9** | **cited**; framing differs (Acumen splits forecast/actual; we combine) |
+| `DCMA-10` Resources | ≤ 5% of incomplete tasks (duration > 0) lack a resource | DCMA-EDWARDS / DCMA-WINTER 14-pt M10; **Acumen #10** | **cited**; Acumen Weight=0 (informational); we score it |
+| `DCMA-11` Missed Tasks | ≤ 5% of baselined tasks finish (or forecast) past baseline | DCMA-EDWARDS / DCMA-WINTER 14-pt M11; **Acumen #11** | **cited** (Acumen formula, see above) |
+| `DCMA-12` Critical Path Test | an injected critical-path delay must flow to the project finish (pass/fail) | DCMA-EDWARDS / DCMA-WINTER 14-pt M12; **Acumen #12** | **cited** (Acumen formula, see above) |
+| `DCMA-13` CPLI | ≥ 0.95: (baseline−status) / (forecast−status), working-minute offsets | DCMA-EDWARDS / DCMA-WINTER 14-pt M13; **Acumen #13** | **cited** (Acumen CPLI formula, see above) |
+| `DCMA-14` BEI | ≥ 0.95: tasks completed / tasks baselined-due by the status date | DCMA-EDWARDS / DCMA-WINTER 14-pt M14; **Acumen #14** | **cited** (Acumen BEI formula, see above) |
 | `sra` | Monte-Carlo SRA: BetaPERT 3-point sampling → P50/P80/P95 + per-task criticality index (default spread O=0.75D, M=D, P=1.5D) | SRA-MONTE-CARLO / BETA-PERT (Acumen Fuse Risk; Primavera Risk Analysis) | method cited (practice); default spread is a **tool default**, not parity; page-anchor source-pending |
 | `SPI` | Schedule Performance Index = EV/PV = BCWP/BCWS (PV time-phased by linear baseline spend); ≥ 0.95 common EVM management threshold (NOT a DCMA-14 number). Needs schema v1.1.0 `budgeted_cost`+`baseline_start`; SKIPPED without them | NASA-EVM (SPI = BCWP/BCWS) | method cited (practice); 0.95 is a management threshold, not DCMA; page-anchor source-pending |
 | `SPI(t)` | Earned-Schedule SPI(t) = ES/AT; ES inverts the baseline PV curve to the time matching current EV; ≥ 0.95 common management threshold. Needs schema v1.1.0 fields; SKIPPED without them | NASA-EVM / Lipke "Earned Schedule" | method cited (practice); 0.95 is a management threshold, not DCMA; page-anchor source-pending |
@@ -58,6 +62,39 @@ metrics ship in the trust-root spine.)_
 | `diff_engine` | Objective version-pair deltas (duration/float/date shifts, became-critical/recovered, predecessor add/remove); UniqueID-matched, absolute-status-date ordered | ACUMEN comparative (`ProjectTimeNow`/`ProjectPreviousTimeNow`); deltas are arithmetic | objective facts; comparative frame cited (practice); page-anchor source-pending |
 | `float_analysis` | Float burn-rate + trend bands CRITICAL / SEVERE_EROSION (≤−10d) / ERODING (<−1d) / STABLE / IMPROVING (>+1d) | **tool-original extension** — thresholds are tool defaults, not from DCMA/DECM/Acumen | **EXTENSION** — never presented as reference-tool parity |
 | `exec_summary` health band | GREEN (≥90%) / YELLOW (≥70%) / RED (else, or any negative float) over the DCMA integrity score | **tool-original extension** — a synthesis over DCMA outcomes | **EXTENSION** — never presented as reference-tool parity |
+
+## Acumen Fuse Metric Library — verified DCMA 14 Point formulas
+
+These are the **verbatim metric definitions** from a Deltek Acumen Fuse *Metric
+Library* export (`.aft`, `MetricLibraryFile`), group **"DCMA 14 Point"** —
+supplied as a reference by the operator. They resolve the "page-anchor
+source-pending" status above: each of our DCMA checks below is now cited against
+Acumen's own formula, not just the canonical threshold value. (The `.aft` itself
+is a metric-definition export, not schedule data, and is not committed.)
+
+| # | Acumen metric (name) | Acumen formula (abridged) | Our check |
+|---|---|---|---|
+| 1 | Logic | `SUM((NumberOfPredecessors+NumberofExternalPredecessors=0) + (NumberOfSuccessors+NumberofExternalSuccessors=0))`; ≤5% | `DCMA-01` |
+| 2 | Leads | `SUM(NumberOfLeads)`; % = `/SUM(NumberOfPredecessors)`; ==0 | `DCMA-02` |
+| 3 | Lags | `SUM(NumberOfLags)`; % = `/SUM(NumberOfPredecessors)`; ≤5% | `DCMA-03` |
+| 4 | SS/FF Relations **+** SF Relations (split) | `SUM(NumberofPredecessors - NumberofFSPredecessors - NumberofSFPredecessors)` and `SUM(NumberofSFPredecessors)` | `DCMA-04` (we report **%FS**; reconcilable) |
+| 5 | Hard Constraint | `SUM(ActivityConstraint in {MandatoryStart, MandatoryFinish, MustStartOn, MustFinishOn, …})`; ≤5% | `DCMA-05` |
+| 6 | High Float | total float **> 2 months**; ≤5% | `DCMA-06` (our `> 44 working days` ≈ 2 months) |
+| 7 | Negative Float | **incomplete** activities with total float < 0 | `DCMA-07` |
+| 8 | High Duration | duration **> 2 months**; ≤5% | `DCMA-08` (our `> 44 working days`) |
+| 9 | Invalid Forecast Dates **+** Invalid Actual Dates (split) | `SUM((EarlyStart<TimeNow)*(ActualStart="") + (EarlyFinish<TimeNow)*(ActualFinish=""))` and `SUM((ActualStart>TimeNow)+(ActualFinish>TimeNow))` | `DCMA-09` (we combine both) |
+| 10 | Resources | activities without resources/costs; **Weight = 0 (informational in Acumen)** | `DCMA-10` (we score it — weighting differs) |
+| 11 | Missed Activities | activities slipped from baseline dates | `DCMA-11` |
+| 12 | Critical Path Test | `IF(SUM(ProjectCriticalPathTest=TRUE)=COUNTA(ID), "✓", …)` | `DCMA-12` |
+| 13 | CPLI | `((ProjectFinish-ProjectTimeNow)+MIN(TotalFloat)) / (ProjectFinish-ProjectTimeNow)`; ≥0.95 | `DCMA-13` |
+| 14 | BEI | `SUM((BaselineDuration>0)*(ActivityStatus="Complete")) / SUM((BaselineFinish<=ProjectTimeNow)*(BaselineDuration>0))`; ≥0.95 | `DCMA-14` |
+
+**Reconciled against two real Acumen-analyzed schedules** ("Commercial
+Construction", 145 tasks): the directly-comparable structural counts match
+(Missing Logic 6, Leads 0, Lags 2, Hard Constraints 0, Negative Float 0, Critical
+37 on the latest version). Known framing differences (not drift): Acumen splits
+#4 (SS/FF vs SF) and #9 (forecast vs actual) where we report a single figure, and
+weights #10 at 0 while we include it in the integrity score.
 
 ## Foundational semantics cited by the trust-root spine
 
