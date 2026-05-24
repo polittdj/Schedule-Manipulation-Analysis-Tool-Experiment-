@@ -32,6 +32,7 @@ from flask.typing import ResponseReturnValue
 from schedule_forensics.analysis import ScheduleAnalysis, analyze_schedule
 from schedule_forensics.cei import CEIError, compute_cei
 from schedule_forensics.cpm import CPMError
+from schedule_forensics.diff_engine import VersionPairDiff, diff_consecutive
 from schedule_forensics.exec_summary import generate_executive_summary, health_band
 from schedule_forensics.importers.com_msproject import (
     ComImporterError,
@@ -75,6 +76,9 @@ _SRA_MAX_TASKS: int = 300
 _SRA_TOP_CRITICALITY: int = 15
 _MINUTES_PER_DAY: float = 480.0
 
+# How many most-moved task deltas to surface per version pair in the diff card.
+_DIFF_TOP_CHANGES: int = 12
+
 # ── Native .mpp/.mpx reader choice (user-selectable in the upload form) ───────
 # "mpxj" -> cross-platform MPXJ subprocess (default); "com" -> MS Project COM
 # automation (Windows-only). Only these two are valid; anything else falls back
@@ -101,6 +105,7 @@ _STATE: dict[str, Any] = {
     "trends": None,
     "sra": None,
     "sra_note": None,
+    "diffs": (),
 }
 
 
@@ -114,6 +119,7 @@ def _clear_state() -> None:
     _STATE["trends"] = None
     _STATE["sra"] = None
     _STATE["sra_note"] = None
+    _STATE["diffs"] = ()
 
 
 # ── Inline HTML template (no external assets — LAW 1) ─────────────────────────
@@ -386,6 +392,59 @@ _TEMPLATE = """<!DOCTYPE html>
     </p>
   </div>
   {% endif %}{# end trend analysis #}
+
+  {% if diffs %}
+  <div class="card">
+    <h3>Version-to-Version Changes</h3>
+    <p style="color:#555;margin-bottom:8px;">
+      Objective deltas between consecutive status updates (tasks matched by UniqueID).
+      Date and float shifts are in working days; a positive finish shift means the task moved later.
+    </p>
+    {% for d in diffs %}
+    <h4>{{ d.previous_status }} &rarr; {{ d.current_status }}</h4>
+    <div class="summary-grid" style="margin-bottom:8px;">
+      <span class="sg-label">Tasks added / deleted:</span>
+      <span class="sg-value">{{ d.n_added }} / {{ d.n_deleted }}</span>
+      <span class="sg-label">Became critical / recovered:</span>
+      <span class="sg-value">{{ d.n_became_critical }} / {{ d.n_recovered }}</span>
+      <span class="sg-label">Logic links added + removed:</span>
+      <span class="sg-value">{{ d.n_logic_changes }}</span>
+    </div>
+    {% if d.top_changes %}
+    <table>
+      <thead><tr><th>UniqueID</th><th>Finish shift (d)</th><th>Float &Delta; (d)</th>
+        <th>Flag</th><th>Preds +</th><th>Preds &minus;</th></tr></thead>
+      <tbody>
+        {% for t in d.top_changes %}
+        <tr>
+          <td>{{ t.unique_id }}</td>
+          <td>{{ "%+.1f"|format(t.finish_shift_days) }}</td>
+          <td>{{ "%+.1f"|format(t.float_delta_days) }}</td>
+          <td>
+            {% if t.became_critical %}<span class="status-FAIL">became critical</span>
+            {% elif t.recovered %}<span class="status-PASS">recovered</span>
+            {% else %}&mdash;{% endif %}
+          </td>
+          <td>{{ t.preds_added | join(", ") }}</td>
+          <td>{{ t.preds_removed | join(", ") }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if d.n_notable > d.top_changes|length %}
+    <p style="font-size:11px;color:#777;">Showing the {{ d.top_changes|length }} largest of
+      {{ d.n_notable }} changed activities.</p>
+    {% endif %}
+    {% else %}
+    <p style="color:#555;">No task-level changes between these versions.</p>
+    {% endif %}
+    {% endfor %}
+    <p style="font-size:11px;color:#777;margin-top:6px;">
+      Objective version deltas (the Acumen ProjectTimeNow / ProjectPreviousTimeNow comparative
+      pattern) &mdash; measured facts, not a score; no threshold is applied.
+    </p>
+  </div>
+  {% endif %}{# end version diff #}
   {% endif %}{# end comparative #}
 
   {% if analysis %}
@@ -672,6 +731,21 @@ def _compute_trends(schedules: list[Schedule]) -> TrendReport | None:
         return None
 
 
+def _compute_diffs(schedules: list[Schedule]) -> tuple[VersionPairDiff, ...]:
+    """Objective consecutive version-pair deltas across >=2 versions; ``()`` if not computable.
+
+    Like the trend report, this needs a ``status_date`` on every version to order
+    the series (``VersionMatchError``) and a schedulable network in each
+    (``CPMError``); either way the diff section is simply omitted (fail safe, never
+    a crash or a fabricated delta)."""
+    if len(schedules) < 2:
+        return ()
+    try:
+        return diff_consecutive(schedules)
+    except (VersionMatchError, CPMError):
+        return ()
+
+
 def _compute_sra(schedule: Schedule) -> tuple[SRAResult | None, str | None]:
     """Monte-Carlo SRA for the displayed schedule; ``(result, note)``.
 
@@ -722,6 +796,7 @@ def _store_results(parsed: list[tuple[str, Schedule]]) -> None:
     _STATE["cei"] = cei_periods
     _STATE["cei_note"] = cei_note
     _STATE["trends"] = _compute_trends(schedules)
+    _STATE["diffs"] = _compute_diffs(schedules)
 
 
 def _sra_view(sra: SRAResult | None) -> dict[str, Any] | None:
@@ -745,6 +820,59 @@ def _sra_view(sra: SRAResult | None) -> dict[str, Any] | None:
         "p95_days": sra.p95 / _MINUTES_PER_DAY,
         "top_criticality": top,
     }
+
+
+def _diffs_view(diffs: tuple[VersionPairDiff, ...]) -> list[dict[str, Any]]:
+    """Pre-format consecutive version-pair diffs for the template.
+
+    Keeps the Jinja template free of arithmetic/sorting: per pair, summarise the
+    objective counts (added/deleted/became-critical/recovered/logic changes) and
+    surface the most-moved task deltas first. A delta is "notable" when anything
+    actually changed (finish/float shift, criticality flip, or a logic edit);
+    notable deltas are ranked by absolute finish shift (then ``unique_id``) and
+    capped. Shifts render in working days (offset / 480.0)."""
+    views: list[dict[str, Any]] = []
+    for pair in diffs:
+        notable = [
+            d
+            for d in pair.task_deltas
+            if d.became_critical
+            or d.recovered
+            or d.finish_shift_minutes
+            or d.total_float_delta_minutes
+            or d.predecessors_added
+            or d.predecessors_removed
+        ]
+        notable.sort(key=lambda d: (-abs(d.finish_shift_minutes), d.unique_id))
+        top = [
+            {
+                "unique_id": d.unique_id,
+                "finish_shift_days": d.finish_shift_minutes / _MINUTES_PER_DAY,
+                "float_delta_days": d.total_float_delta_minutes / _MINUTES_PER_DAY,
+                "became_critical": d.became_critical,
+                "recovered": d.recovered,
+                "preds_added": list(d.predecessors_added),
+                "preds_removed": list(d.predecessors_removed),
+            }
+            for d in notable[:_DIFF_TOP_CHANGES]
+        ]
+        views.append(
+            {
+                "previous_status": pair.previous_status.date().isoformat(),
+                "current_status": pair.current_status.date().isoformat(),
+                "n_added": len(pair.added_ids),
+                "n_deleted": len(pair.deleted_ids),
+                "n_became_critical": sum(1 for d in pair.task_deltas if d.became_critical),
+                "n_recovered": sum(1 for d in pair.task_deltas if d.recovered),
+                "n_logic_changes": sum(
+                    len(d.predecessors_added) + len(d.predecessors_removed)
+                    for d in pair.task_deltas
+                ),
+                "n_notable": len(notable),
+                "top_changes": top,
+            }
+        )
+    return views
 
 
 def _render_page(
@@ -775,6 +903,7 @@ def _render_page(
         trends=_STATE.get("trends"),
         sra=_sra_view(_STATE.get("sra")),
         sra_note=_STATE.get("sra_note"),
+        diffs=_diffs_view(_STATE.get("diffs") or ()),
     )
     return (html, status) if status != 200 else html
 
@@ -874,7 +1003,12 @@ def create_app() -> Flask:
         if analysis is None:
             return redirect(url_for("index"))
         buf = io.BytesIO()
-        build_excel_workbook(analysis, trends=_STATE.get("trends"), sra=_STATE.get("sra")).save(buf)
+        build_excel_workbook(
+            analysis,
+            trends=_STATE.get("trends"),
+            sra=_STATE.get("sra"),
+            diff=_STATE.get("diffs") or (),
+        ).save(buf)
         buf.seek(0)
         return send_file(
             buf,
@@ -890,7 +1024,12 @@ def create_app() -> Flask:
         if analysis is None:
             return redirect(url_for("index"))
         buf = io.BytesIO()
-        build_word_document(analysis, trends=_STATE.get("trends"), sra=_STATE.get("sra")).save(buf)
+        build_word_document(
+            analysis,
+            trends=_STATE.get("trends"),
+            sra=_STATE.get("sra"),
+            diff=_STATE.get("diffs") or (),
+        ).save(buf)
         buf.seek(0)
         return send_file(
             buf,

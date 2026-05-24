@@ -23,6 +23,10 @@ Sheets
   is supplied: Monte-Carlo finish percentiles (P50/P80/P95, working days) +
   per-activity criticality index (reference-tool capability; the default duration
   spread that seeds it is the tool's own heuristic, captioned as such).
+* **Version Diff** -- present only when one or more
+  :class:`~schedule_forensics.diff_engine.VersionPairDiff` are supplied: objective
+  consecutive-version deltas (added/deleted, became-critical/recovered, finish/float
+  shifts in working days, logic add/remove). Measured facts, not a score.
 
 CUI / LAW 1: no schedule data leaves the machine; all writes are local. The
 ``CUI_NOTICE`` constant is the single source of truth (in every sheet).
@@ -44,6 +48,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from schedule_forensics.analysis import ScheduleAnalysis
+from schedule_forensics.diff_engine import TaskDelta, VersionPairDiff
 from schedule_forensics.metrics_common import MetricStatus
 from schedule_forensics.sra import SRAResult
 from schedule_forensics.trend_analysis import TrendReport
@@ -399,10 +404,103 @@ def _build_sra_sheet(ws: Worksheet, sra: SRAResult) -> None:
     _autofit_columns(ws)
 
 
+def _notable_deltas(pair: VersionPairDiff) -> list[TaskDelta]:
+    """Task deltas where anything actually changed, most-moved (by finish shift) first."""
+    changed = [
+        d
+        for d in pair.task_deltas
+        if d.became_critical
+        or d.recovered
+        or d.finish_shift_minutes
+        or d.total_float_delta_minutes
+        or d.predecessors_added
+        or d.predecessors_removed
+    ]
+    changed.sort(key=lambda d: (-abs(d.finish_shift_minutes), d.unique_id))
+    return changed
+
+
+def _build_diff_sheet(ws: Worksheet, diff: tuple[VersionPairDiff, ...]) -> None:
+    """Objective version-to-version deltas (NOT an extension -- comparative facts).
+
+    Per consecutive pair: the objective counts (added/deleted/became-critical/
+    recovered/logic edits) and the most-moved task deltas. Shifts render in working
+    days (offset / 480.0). These are measured facts (the Acumen ProjectTimeNow
+    pattern), so no threshold is applied and nothing is flagged an extension."""
+    _add_cui_banner(ws, "A1:F1")
+    row = 3
+    for pair in diff:
+        header = (
+            f"{pair.previous_status.date().isoformat()} -> {pair.current_status.date().isoformat()}"
+        )
+        ws.cell(row=row, column=1, value=header).font = Font(bold=True)
+        row += 1
+        ws.cell(row=row, column=1, value="Tasks added / deleted")
+        ws.cell(row=row, column=2, value=f"{len(pair.added_ids)} / {len(pair.deleted_ids)}")
+        row += 1
+        ws.cell(row=row, column=1, value="Became critical / recovered")
+        n_bc = sum(1 for d in pair.task_deltas if d.became_critical)
+        n_rec = sum(1 for d in pair.task_deltas if d.recovered)
+        ws.cell(row=row, column=2, value=f"{n_bc} / {n_rec}")
+        row += 1
+        ws.cell(row=row, column=1, value="Logic links added + removed")
+        n_logic = sum(
+            len(d.predecessors_added) + len(d.predecessors_removed) for d in pair.task_deltas
+        )
+        ws.cell(row=row, column=2, value=n_logic)
+        row += 1
+
+        notable = _notable_deltas(pair)
+        if notable:
+            headers = [
+                "UniqueID",
+                "Finish shift (d)",
+                "Float delta (d)",
+                "Flag",
+                "Preds +",
+                "Preds -",
+            ]
+            for col, header_text in enumerate(headers, start=1):
+                cell = ws.cell(row=row, column=col, value=header_text)
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = _header_fill()
+            row += 1
+            for d in notable:
+                flag = (
+                    "became critical" if d.became_critical else "recovered" if d.recovered else ""
+                )
+                ws.cell(row=row, column=1, value=d.unique_id)
+                ws.cell(row=row, column=2, value=d.finish_shift_minutes / _MINUTES_PER_DAY)
+                ws.cell(row=row, column=3, value=d.total_float_delta_minutes / _MINUTES_PER_DAY)
+                ws.cell(row=row, column=4, value=flag)
+                ws.cell(row=row, column=5, value=", ".join(str(p) for p in d.predecessors_added))
+                ws.cell(row=row, column=6, value=", ".join(str(p) for p in d.predecessors_removed))
+                row += 1
+        else:
+            ws.cell(row=row, column=1, value="no task-level changes").font = Font(italic=True)
+            row += 1
+        row += 1
+
+    note = ws.cell(
+        row=row,
+        column=1,
+        value=(
+            "Objective version deltas (Acumen ProjectTimeNow / ProjectPreviousTimeNow comparative "
+            "pattern): measured facts, not a score; no threshold is applied. Positive finish shift "
+            "= task moved later; positive float delta = float gained."
+        ),
+    )
+    note.font = Font(italic=True)
+    note.alignment = Alignment(wrap_text=True)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+    _autofit_columns(ws)
+
+
 def build_excel_workbook(
     analysis: ScheduleAnalysis,
     trends: TrendReport | None = None,
     sra: SRAResult | None = None,
+    diff: tuple[VersionPairDiff, ...] = (),
 ) -> Workbook:
     """Build and return an openpyxl ``Workbook``.
 
@@ -410,7 +508,8 @@ def build_excel_workbook(
     given and spans 2+ versions, also appends a **Trends** sheet (tool-original
     extension: version trajectory + float-erosion bands). When *sra* is given,
     appends a **Risk (SRA)** sheet (Monte-Carlo finish percentiles + criticality
-    index; reference-tool capability)."""
+    index; reference-tool capability). When *diff* has any version pairs, appends a
+    **Version Diff** sheet (objective consecutive-version deltas)."""
     wb = Workbook()
     summary = wb.active
     assert summary is not None  # a fresh Workbook always has an active sheet
@@ -423,6 +522,8 @@ def build_excel_workbook(
         _build_trends_sheet(wb.create_sheet("Trends"), trends)
     if sra is not None:
         _build_sra_sheet(wb.create_sheet("Risk (SRA)"), sra)
+    if diff:
+        _build_diff_sheet(wb.create_sheet("Version Diff"), diff)
     return wb
 
 
@@ -431,6 +532,7 @@ def build_excel_report(
     path: str | os.PathLike[str],
     trends: TrendReport | None = None,
     sra: SRAResult | None = None,
+    diff: tuple[VersionPairDiff, ...] = (),
 ) -> None:
     """Write an Excel ``.xlsx`` report for *analysis* to *path* (all data stays local)."""
-    build_excel_workbook(analysis, trends=trends, sra=sra).save(path)
+    build_excel_workbook(analysis, trends=trends, sra=sra, diff=diff).save(path)

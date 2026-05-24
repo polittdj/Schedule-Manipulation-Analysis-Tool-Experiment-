@@ -23,7 +23,11 @@ Document structure
    :class:`~schedule_forensics.sra.SRAResult` is supplied): Monte-Carlo finish
    percentiles (P50/P80/P95, working days) + per-activity criticality index
    (reference-tool capability; default duration spread captioned as a tool heuristic).
-8. If any metric has ``is_extension=True``, a footnote distinguishing those rows
+8. Optional Version-to-Version Changes section (only when one or more
+   :class:`~schedule_forensics.diff_engine.VersionPairDiff` are supplied): objective
+   consecutive-version deltas (added/deleted, became-critical/recovered, finish/float
+   shifts in working days, logic add/remove). Measured facts, not a score.
+9. If any metric has ``is_extension=True``, a footnote distinguishing those rows
    as tool-original extensions (parity-honesty).
 
 CUI / LAW 1: no schedule data leaves the machine; all writes are to the
@@ -49,6 +53,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from schedule_forensics.analysis import ScheduleAnalysis
+from schedule_forensics.diff_engine import TaskDelta, VersionPairDiff
 from schedule_forensics.metrics_common import MetricStatus
 from schedule_forensics.sra import SRAResult
 from schedule_forensics.trend_analysis import TrendReport
@@ -395,6 +400,76 @@ def _add_sra_section(doc: Document, sra: SRAResult) -> None:
     run.italic = True
 
 
+def _notable_deltas(pair: VersionPairDiff) -> list[TaskDelta]:
+    """Task deltas where anything actually changed, most-moved (by finish shift) first."""
+    changed = [
+        d
+        for d in pair.task_deltas
+        if d.became_critical
+        or d.recovered
+        or d.finish_shift_minutes
+        or d.total_float_delta_minutes
+        or d.predecessors_added
+        or d.predecessors_removed
+    ]
+    changed.sort(key=lambda d: (-abs(d.finish_shift_minutes), d.unique_id))
+    return changed
+
+
+def _add_diff_section(doc: Document, diff: tuple[VersionPairDiff, ...]) -> None:
+    """Objective version-to-version deltas (NOT an extension -- comparative facts).
+
+    Per consecutive pair: the objective counts and the most-moved task deltas, with
+    finish/float shifts in working days. These are measured facts (the Acumen
+    ProjectTimeNow comparative pattern), so no threshold is applied."""
+    doc.add_heading("Version-to-Version Changes", level=1)
+    for pair in diff:
+        doc.add_heading(
+            f"{pair.previous_status.date().isoformat()} → {pair.current_status.date().isoformat()}",
+            level=2,
+        )
+        n_bc = sum(1 for d in pair.task_deltas if d.became_critical)
+        n_rec = sum(1 for d in pair.task_deltas if d.recovered)
+        n_logic = sum(
+            len(d.predecessors_added) + len(d.predecessors_removed) for d in pair.task_deltas
+        )
+        para = doc.add_paragraph()
+        para.add_run(
+            f"Tasks added/deleted: {len(pair.added_ids)}/{len(pair.deleted_ids)}; "
+            f"became critical/recovered: {n_bc}/{n_rec}; logic links added+removed: {n_logic}."
+        )
+
+        notable = _notable_deltas(pair)
+        if not notable:
+            run = doc.add_paragraph().add_run("no task-level changes between these versions")
+            run.italic = True
+            continue
+        headers = ["UniqueID", "Finish shift (d)", "Float delta (d)", "Flag", "Preds +", "Preds -"]
+        table = doc.add_table(rows=1 + len(notable), cols=len(headers))
+        table.style = "Table Grid"
+        _fill_header_row(table, headers)
+        for row_idx, d in enumerate(notable, start=1):
+            flag = "became critical" if d.became_critical else "recovered" if d.recovered else ""
+            values = [
+                str(d.unique_id),
+                f"{d.finish_shift_minutes / _MINUTES_PER_DAY:+.1f}",
+                f"{d.total_float_delta_minutes / _MINUTES_PER_DAY:+.1f}",
+                flag,
+                ", ".join(str(p) for p in d.predecessors_added),
+                ", ".join(str(p) for p in d.predecessors_removed),
+            ]
+            row = table.rows[row_idx]
+            for col_idx, val in enumerate(values):
+                row.cells[col_idx].text = val
+
+    run = doc.add_paragraph().add_run(
+        "Objective version deltas (the Acumen ProjectTimeNow / ProjectPreviousTimeNow comparative "
+        "pattern): measured facts, not a score; no threshold is applied. Positive finish shift = "
+        "task moved later; positive float delta = float gained."
+    )
+    run.italic = True
+
+
 def _add_extension_footnote(doc: Document, analysis: ScheduleAnalysis) -> None:
     extension_ids = [m.metric_id for m in analysis.dcma if m.is_extension]
     if not extension_ids:
@@ -413,14 +488,17 @@ def build_word_document(
     analysis: ScheduleAnalysis,
     trends: TrendReport | None = None,
     sra: SRAResult | None = None,
+    diff: tuple[VersionPairDiff, ...] = (),
 ) -> Document:
     """Build and return a python-docx ``Document`` from *analysis* (no disk I/O).
 
     When *trends* is given and spans 2+ versions, a **Trend Analysis** section
     (tool-original extension: version trajectory + float erosion) is added. When
     *sra* is given, a **Schedule Risk Analysis** section (Monte-Carlo finish
-    percentiles + criticality index; reference-tool capability) is added. Both
-    precede the extensions footnote."""
+    percentiles + criticality index; reference-tool capability) is added. When
+    *diff* has any version pairs, a **Version-to-Version Changes** section
+    (objective consecutive-version deltas) is added. All precede the extensions
+    footnote."""
     doc = docx.Document()
     _add_title(doc)
     _add_cui_banner(doc)
@@ -432,6 +510,8 @@ def build_word_document(
         _add_trend_section(doc, trends)
     if sra is not None:
         _add_sra_section(doc, sra)
+    if diff:
+        _add_diff_section(doc, diff)
     _add_extension_footnote(doc, analysis)
     return doc
 
@@ -441,6 +521,7 @@ def build_word_report(
     path: str | os.PathLike[str],
     trends: TrendReport | None = None,
     sra: SRAResult | None = None,
+    diff: tuple[VersionPairDiff, ...] = (),
 ) -> None:
     """Write a Word ``.docx`` report for *analysis* to *path* (all data stays local)."""
-    build_word_document(analysis, trends=trends, sra=sra).save(os.fspath(path))
+    build_word_document(analysis, trends=trends, sra=sra, diff=diff).save(os.fspath(path))
