@@ -7,9 +7,17 @@ killable subprocess** that converts the file to MSPDI XML; the proven pure-Pytho
 (Commandment 1: **never in-process JPype**).
 
 MPXJ is an **optional runtime dependency** — like the Windows COM path, it is
-discovered at runtime and is **not bundled** (keeps the repo and CI lean). If it
-is not configured, `parse_mpp` raises `ImporterError` (fail closed); the rest of
-the tool is unaffected.
+discovered at runtime and is **not bundled** (keeps the repo and CI lean). Once it
+is built into its default location (`tools/mpxj/`), the importer **auto-discovers
+it with no environment variable** — so the web UI and CLI read `.mpp` out of the
+box. If it is not built (and no `SF_MPXJ_*` override is set), `parse_mpp` raises
+`ImporterError` (fail closed); the rest of the tool is unaffected.
+
+> **Automated setup.** A `SessionStart` hook (`.claude/hooks/session-start.sh`)
+> builds MPXJ on the first Claude Code on the web session, and the one-click
+> launchers (`launch/`) build it on their first run. Both are idempotent, so in
+> practice `.mpp` parsing "just works" without any manual step. The manual
+> instructions below are for other environments or troubleshooting.
 
 > **LAW 1:** MPXJ runs locally and does no network I/O. The conversion writes a
 > temp MSPDI file that is deleted immediately after parsing; no schedule data
@@ -21,7 +29,9 @@ the tool is unaffected.
 
 ```sh
 bash tools/mpxj/setup.sh                  # needs Java (JDK >= 17) + Maven
-export SF_MPXJ_HOME="$PWD/tools/mpxj"      # the dir setup.sh populated
+# That's it — the importer auto-discovers tools/mpxj. Setting SF_MPXJ_HOME is only
+# needed if you install MPXJ somewhere else:
+# export SF_MPXJ_HOME="$PWD/tools/mpxj"
 ```
 
 **Windows (PowerShell):**
@@ -81,10 +91,11 @@ Java expands the `lib/*` classpath wildcard itself):
 export SF_MPXJ_CMD="java -cp $PWD/classes:$PWD/lib/* MpxjToMspdi {input} {output}"
 ```
 
-Resolution order is `SF_MPXJ_CMD` > `SF_MPXJ_JAR` > `SF_MPXJ_HOME`. The quick
-setup above uses `SF_MPXJ_HOME` (the importer then runs
-`java -cp <home>/classes:<home>/lib/* MpxjToMspdi {input} {output}`). Alternatively
-build a single runnable jar and set `SF_MPXJ_JAR=/path/to.jar`.
+Resolution order is `SF_MPXJ_CMD` > `SF_MPXJ_JAR` > `SF_MPXJ_HOME` > the
+**auto-discovered default** `tools/mpxj/` (used when none of the env vars are set
+and that directory has been built). The quick setup above relies on auto-discovery;
+the env vars are only for custom install locations or a single runnable jar
+(`SF_MPXJ_JAR=/path/to.jar`).
 
 Then in Python:
 

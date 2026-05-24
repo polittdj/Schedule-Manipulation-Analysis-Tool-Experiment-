@@ -313,6 +313,9 @@ def test_analyze_mpp_without_mpxj_returns_clean_400(
     c: FlaskClient = client  # type: ignore[assignment]
     for var in ("SF_MPXJ_CMD", "SF_MPXJ_JAR", "SF_MPXJ_HOME"):
         monkeypatch.delenv(var, raising=False)
+    # Disable auto-discovery of a locally built tools/mpxj so this asserts the
+    # truly-unconfigured fail-closed path (not a real MPXJ invocation).
+    monkeypatch.setattr("schedule_forensics.importers.mpp_mpxj._default_mpxj_home", lambda: None)
     resp = c.post(
         "/analyze",
         data={"schedule_files": (io.BytesIO(b"fake"), "plan.mpp")},

@@ -20,6 +20,16 @@ if [ ! -x ".venv/bin/python" ]; then
   .venv/bin/python -m pip install -e .
 fi
 
+# Build the native .mpp reader (MPXJ) on first run if Java + Maven are present. The
+# importer auto-discovers tools/mpxj, so .mpp uploads then parse with no extra config.
+# Best-effort: if it fails or the toolchain is absent, the other formats still work.
+if [ ! -f "tools/mpxj/classes/MpxjToMspdi.class" ] \
+   && command -v java >/dev/null 2>&1 && command -v mvn >/dev/null 2>&1; then
+  echo "Setting up native .mpp support (MPXJ)… (one-time)"
+  bash tools/mpxj/setup.sh \
+    || echo "Note: MPXJ build failed; .mpp parsing unavailable (see docs/MPXJ.md)."
+fi
+
 URL="http://127.0.0.1:${SF_PORT}"
 echo "Starting Schedule Forensics at ${URL}"
 echo "(Close this window / Ctrl-C to stop. All data stays on this machine.)"
