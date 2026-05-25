@@ -1,194 +1,158 @@
-# HANDOFF — Schedule Forensics (resume the build)
+# HANDOFF — Schedule Forensics
 
-> **You are a fresh Claude Code session continuing an in-progress build.** Read this
-> file first, then `CLAUDE.md` and `docs/HAZARDS.md`. Verify any rule against the
-> live file before acting on it (Hazard **H-FICTIONAL-RULE / H13** — do not trust
-> remembered rules, including ones in this doc, without checking the live code).
+> Single "pick up from here" doc for the next person (or future you). Read this,
+> then `CLAUDE.md` (the project constitution) and `docs/HAZARDS.md`. Verify any
+> rule against the live file before acting on it (do not trust remembered rules).
 
 ---
 
-## 0. Resume in 60 seconds
+## 0. Status snapshot (2026-05)
 
-```sh
-git checkout main && git pull                      # feature work merges to main via focused PRs
-python3 -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -e . && pip install -r requirements-dev.txt   # (CI/pytest also work via pythonpath=src)
-ruff check . && ruff format --check . && mypy && pytest    # expect: all clean, ~415 pass / 3 skip
-python -m schedule_forensics.webapp                # serves http://127.0.0.1:5000 (--port / SF_PORT)
+- **Branch/state:** `main` is the integration branch; feature work lands via focused
+  **squash-merged PRs**. As of this writing `main` is green: **447 pass / 3 skip**,
+  `ruff` + `ruff format` + `mypy --strict` clean, 28 source modules, **schema FROZEN
+  at v1.2.0**.
+- **The tool works and runs locally** end-to-end: ingest → CPM → DCMA-14 +
+  driving/critical path + Monte-Carlo SRA + multi-version CEI/trend/diff → Excel/Word
+  reports → executive summary → dark localhost UI.
+- **ONE open PR:** **#41 "Bundle MPXJ runner"** — *merge this to fix native `.mpp`
+  uploads* (see §2.3). Everything else (#27–#40) is merged.
+- **Validated against Acumen Fuse** on two real schedules (see §4).
+
+---
+
+## 1. What it is + the two laws
+
+Local-only, CUI-compliant forensic schedule analyzer. Ingests MS Project / Primavera
+schedules, runs multi-version comparative analysis, and produces Excel/Word reports
+plus a plain-English executive summary. Runs entirely on `127.0.0.1`.
+
+- **LAW 1 — DATA SOVEREIGNTY:** no schedule data leaves the machine; loopback only;
+  default classification CUI; fail closed. (Verified: zero network egress in `src/`;
+  UI binds `127.0.0.1`; the LLM backends are loopback-enforced.)
+- **LAW 2 — FIDELITY OVER SPEED:** numbers must match Acumen Fuse / SSI / MS Project;
+  every metric cites a source; tool-original capabilities are labeled extensions;
+  no "approximately" (every user-facing number traces to a computed value via a test).
+- If they conflict, **Law 1 wins.** Full detail: `CLAUDE.md`.
+
+---
+
+## 2. Run it on YOUR machine (Windows operator path)
+
+### 2.1 Prerequisites
+- **Python 3.11+** (https://www.python.org/downloads/ — tick *Add Python to PATH*).
+- *(optional, for AI summaries)* **Ollama** — see §2.4.
+- *(for native `.mpp`)* a **Java runtime (JRE 17+)** — see §2.3.
+
+### 2.2 Start the tool (PowerShell)
+These are **terminal** commands (PowerShell), never the Python `>>>` prompt:
+```powershell
+cd "C:\path\to\Schedule-Manipulation-Analysis-Tool-Experiment-"   # the repo folder
+python -m pip install -e .                # one-time; installs Flask, pydantic, etc.
+python -m schedule_forensics.webapp       # serves http://127.0.0.1:5000
 ```
+Open `http://127.0.0.1:5000`. `Ctrl+C` in the window stops it.
+**Easier:** double-click `launch\Schedule-Forensics.bat` (or run
+`launch\Install-Desktop-Shortcut.bat` once for a desktop icon) — it creates its own
+venv, installs, starts/stops Ollama, and opens the browser.
 
-- **Branching (this build):** focused feature branches → **draft PR → `main`**;
-  the user squash-merges. Recent series used the `claude/eager-brown-OYDZw[-topic]`
-  namespace. Never push to `main` directly; never force-push a shared branch.
-  **Schema FROZEN at v1.2.0.** Latest work + open items: `PHASE-COMPLETE-10.md`
-  (this session); prior: `PHASE-COMPLETE-9.md`.
-- **NOTE on `python -m`:** this is a `src/` layout. `pytest` finds the package via
-  `pythonpath = ["src"]`; to run the webapp from a bare checkout without
-  installing, use `PYTHONPATH=src python -m schedule_forensics.webapp` (or
-  `pip install -e .` first).
-- **Green bar before every commit:** `ruff check`, `ruff format --check`,
-  `mypy` (strict on `src/`), `pytest` — all clean. CI runs the same on Python
-  3.11 + 3.13.
-- **Backup of the pre-greenfield build:** tag `pre-greenfield-snapshot-20260522`
-  / commit `9edd90f` (recover with `git checkout 9edd90f`).
+### 2.3 Reading native `.mpp` (the current friction — and the fix)
+`.mpp` is a binary format; the tool reads it with **MPXJ** (a Java helper) or, on
+Windows, **MS Project COM**. Three options, best first:
 
----
+1. **MPXJ (recommended; full metadata, no MS Project needed).** Needs only a **Java
+   runtime** once **PR #41** is merged — that PR *bundles* the MPXJ jars in the repo
+   so there is **no Maven/build step**. Steps: merge #41 → install a JRE 17+
+   (Adoptium Temurin, https://adoptium.net, "add to PATH") → re-download the repo →
+   `python -m pip install -e .` → upload `.mpp` with the **MPXJ** reader. Verified on
+   real `.mpp` files. *(Before #41 is merged, MPXJ requires Java **and** Maven via
+   `tools\mpxj\setup.ps1`.)*
+2. **MS Project XML (no installs, highest fidelity).** In MS Project: **File → Save
+   As → `XML Format (*.xml)`**, then upload the `.xml`. Pure-Python importer; this is
+   the exact path validated against Acumen. Select multiple version `.xml` files for
+   the comparative view.
+3. **MS Project COM (direct `.mpp`, no Java).** `python -m pip install pywin32`, pick
+   the **"MS Project"** reader, upload `.mpp`. ⚠️ **Unvalidated** against real MS
+   Project — cross-check one file against its XML export before relying on it.
 
-## 1. The two laws (never violate)
-
-- **LAW 1 — DATA SOVEREIGNTY (CUI):** no schedule data leaves the machine; runs on
-  `127.0.0.1` only; default classification CUI; fail closed. (Verified: zero
-  network imports in `src/`; UI binds loopback; CUI→network inference raises.)
-- **LAW 2 — FIDELITY OVER SPEED:** numbers must match Acumen Fuse / Steelray-SSI /
-  MS Project; every metric cites a source; tool-original capabilities are labeled
-  extensions; no "approximately" (every user-facing number traces to a computed
-  value via a test).
-- If they conflict, **Law 1 wins.** Full constitution: `CLAUDE.md`.
-
-## 2. Environment reality (this is NOT the directive's Windows/COM world)
-
-Linux container; Python 3.11 + 3.13; Node 22; Java 21. **No Windows, no MS Project
-COM, no PowerShell.** By explicit user decision: **primary ingestion is
-cross-platform** (MS Project XML + Primavera XER + MPXJ-as-subprocess); **COM is an
-optional Windows-only enhancement, never the only path, and never in-process
-JPype.** Do not "restore" COM-as-trust-root from the original master directive.
+### 2.4 AI-polished executive summary via Ollama (optional, CUI-safe)
+Install Ollama → `ollama pull llama3.2`. Then either let the **launcher auto-start/stop
+it**, or set it manually: `$env:SF_OLLAMA_MODEL = "llama3.2"` before launching. The
+model only *rephrases* the deterministic summary (never changes a number); it runs on
+`127.0.0.1` only; if unavailable the summary falls back to the deterministic text. See
+`docs/OLLAMA.md`.
 
 ---
 
-## 3. What is built (Phases 0–10 complete, all green)
-
-Pipeline runs end-to-end: **MS Project XML / XER / native `.mpp` (MPXJ) / JSON
-`Schedule` → CPM → full DCMA-14 + driving-path + SRA + multi-version
-diff/float-trend/CEI → composition + health score → Excel/Word reports →
-executive summary → localhost UI.** The UI takes **`.mpp`/`.xer`/XML uploads
-(multi-file for the comparative view)** + an MPXJ/COM reader choice, and surfaces:
-single-schedule DCMA + EV (SPI/SPI(t)) + **SRA risk (P50/P80/P95 + criticality)**,
-and multi-version **CEI + trend + objective version-diff**. Reports mirror all of
-it. ~27 source modules, ~415 tests. Module map (`src/schedule_forensics/`):
-
-| Module | Role |
-|---|---|
-| `schemas.py` | **FROZEN v1.2.0** Pydantic model (`Schedule/Task/Relation/Calendar`); strict, immutable, integrity-guarded; UniqueID-only identity. v1.1.0 added `Task.baseline_start`+`Task.budgeted_cost` (EV); v1.2.0 added `Task.finish` (forecast finish, CEI). `SCHEMA_VERSION` + `tests/test_schema_freeze.py` enforce change-control. |
-| `importers/msp_xml.py` | Pure-Python MSPDI (MS Project XML) importer. Dup-UID → `ImporterError`. |
-| `importers/xer.py` | Pure-Python Primavera P6 XER importer (`%T/%F/%R/%E`); UniqueID = `task_id`; multi-project → majority project; constraint codes source-pending. |
-| `importers/mpp_mpxj.py` | Native `.mpp` via MPXJ **subprocess** (never JPype); `SF_MPXJ_CMD`/`SF_MPXJ_JAR` → MSPDI → `parse_msp_xml`; killable; fail-closed. See `docs/MPXJ.md`. |
-| `importers/com_msproject.py` | **Windows-only** MS Project COM importer; pure `schedule_from_com_project` mapping (Linux-tested with a fake), `parse_mpp_via_com` driver (guarded import, headless, ReadOnly). Real-`.mpp` validation is Windows-local. |
-| `performance_indices.py` | Earned-value **SPI** (EV/PV) + **SPI(t)** (Lipke earned schedule); SKIP without EV data. Not in the DCMA health score. |
-| `cei.py` | **CEI** (Current Execution Index, PASEG 10.4.5): per-period finished/forecast-to-finish count ratio over ≥2 status-dated versions; capped at 1.0; multi-version library fn (like `diff_engine`). |
-| `version_matcher.py` | Orders versions by absolute `status_date`; UniqueID-keyed added/deleted/matched. |
-| `cpm.py` | CPM forward/backward on an **integer working-minute axis** (480 min = 1 day). All link types FS/SS/FF/SF + lag; SNET/FNET/SNLT/FNLT + deadlines; total/free float incl. negative; critical path = `total_float<=0`. **ALAP/MSO/MFO raise `CPMError` (fail closed)** pending live-MSP validation. `datetime_to_offset` converts dates. |
-| `metrics_common.py` | Shared metric contract: `MetricResult`, `Threshold` (single-source, cited), `Direction`, typed `Offender`, `evaluate`/`skipped` (SKIPPED never fabricates). |
-| `dcma_checks.py` | DCMA-14 **structural** Metrics 1–8. |
-| `dcma_progress.py` | DCMA-14 **progress** Metrics 9–14 (incl. CPLI, BEI, Critical-Path Test). |
-| `driving_path.py` | SSI driving-slack trace (relationship free float == 0 ⇒ binding). |
-| `sra.py` | Monte-Carlo SRA, BetaPERT 3-point, P50/P80/P95 + criticality index (stdlib `random`, seed-deterministic). **Surfaced (PR #29):** dashboard card + Excel "Risk (SRA)" sheet + Word section; computed once in the webapp (size-capped, fail-safe), default spread labelled a tool heuristic. |
-| `diff_engine.py` | Objective version-pair deltas (duration/float/date shifts, became-critical/recovered, logic add/remove). **Surfaced (PR #31):** comparative "Version-to-Version Changes" card + Excel "Version Diff" sheet + Word section; objective facts, no threshold. |
-| `trend_analysis.py` | Multi-version trajectory (finish drift, per-version health) + float-erosion bands — **tool-original extension**. Surfaced in the comparative UI + Excel/Word (PR #28). |
-| `parity.py` | Golden-file parity harness (PR #30): load a case (input + expected reference values w/ tolerance + cited source), recompute, diff each value; unknown keys/malformed cases fail loud. CLI `scripts/parity_report.py`; cases under `tests/fixtures/golden/`; see `docs/PARITY.md`. Local-only. |
-| `float_analysis.py` | Float burn-rate + trend bands — **labeled tool-original extension** (`is_extension=True`); feeds `trend_analysis`. |
-| `analysis.py` | `analyze_schedule(schedule) -> ScheduleAnalysis`: composes CPM + all 14 DCMA + driving path + health score (the "always-100" guard). |
-| `report_excel.py` / `report_word.py` | openpyxl / python-docx reports over `ScheduleAnalysis`; CUI banner everywhere; round-trip traceability tested. |
-| `inference.py` | `Classification` (CUI default), `InferenceBackend` protocol, `select_backend` (**fail closed: non-local backend unselectable under CUI**), `NullInferenceBackend` (default), `OllamaBackend` (local, not wired), `UnclassifiedClaudeBackend` (network, UNCLASSIFIED-only). |
-| `exec_summary.py` | `generate_executive_summary` — deterministic factual narrative (GREEN/YELLOW/RED, DCMA %, finish, paths, findings, recommendations); backend only rephrases. |
-| `webapp/` | Flask UI on `127.0.0.1`: `/`, `/analyze`, `/wipe`, `/report.{xlsx,docx}`, `/health`; in-memory `_STATE`; no disk writes; CUI banner. Run: `python -m schedule_forensics.webapp`. |
-
-Phase reports with full detail: `PHASE-COMPLETE-0.md`, `-1.md`, `-2.md`, `-5.md`,
-`-8.md`. Source/citation manifest: `docs/REFERENCES.md`. Architecture:
-`docs/ARCHITECTURE.md`.
+## 3. Run it for development (Linux/macOS)
+```sh
+git checkout main && git pull
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e . && pip install -r requirements-dev.txt
+ruff check . && ruff format --check . && mypy && pytest      # expect: ~447 pass / 3 skip
+python -m schedule_forensics.webapp          # or: PYTHONPATH=src python -m schedule_forensics.webapp
+```
+`src/` layout: `pytest` finds the package via `pythonpath=["src"]`; to run the webapp
+from a bare checkout without installing, use `PYTHONPATH=src` (or `pip install -e .`).
 
 ---
 
-## 4. Frozen decisions & conventions (do not silently change)
+## 4. What's built + Acumen parity status
 
-- **Schema is FROZEN at v1.2.0.** Any field add/remove ⇒ bump `SCHEMA_VERSION` AND
-  update `tests/test_schema_freeze.py` in the same change (the guard test fails
-  otherwise). This is deliberate change-control.
-- **UniqueID is the sole cross-version identity key.** Never row `ID`, never name.
-- **CPM internal axis = integer working minutes** from `project_start`; wall-clock
-  conversion is separate (`offset_to_datetime` / `datetime_to_offset`).
-- **Comparative analysis orders by absolute `status_date`** (never relative offsets).
-- **Single source of truth per threshold**, each cited; tool-original capabilities
-  flagged `is_extension` (currently: `float_analysis` trends, `exec_summary` health
-  band). DCMA threshold *values* are canonical but page anchors are **source-pending**.
-- **Fail closed, never emit silently-wrong output:** CPM raises on ALAP/MSO/MFO and
-  cycles; metrics return SKIPPED (not a fabricated number) when data is missing.
+End-to-end pipeline. Module map (`src/schedule_forensics/`): `schemas.py` (FROZEN
+v1.2.0), importers (`msp_xml`, `xer`, `mpp_mpxj`, `com_msproject`), `cpm.py`,
+`version_matcher.py`, `dcma_checks.py` + `dcma_progress.py` (all 14 DCMA),
+`driving_path.py`, `sra.py` (Monte-Carlo P50/P80/P95 + criticality), `diff_engine.py`
+(objective version deltas), `cei.py`, `trend_analysis.py`, `float_analysis.py`,
+`performance_indices.py` (SPI/SPI(t)), `analysis.py` (compose), `report_excel.py` /
+`report_word.py`, `exec_summary.py`, `inference.py` (LLM backends), `parity.py`
+(golden-file harness), `webapp/` (dark UI). Details: `docs/ARCHITECTURE.md`,
+`docs/REFERENCES.md` (now cites Acumen's exact DCMA-14 formulas).
 
-## 5. Next work (prioritized) — pick up here
+**Validated against Deltek Acumen Fuse** (operator supplied real outputs + the metric
+library, this session):
+- Our DCMA definitions match Acumen's "DCMA 14 Point" group; structural metrics
+  matched on real data (Missing Logic, Leads, Lags, Hard Constraints, Negative Float,
+  Critical count).
+- **#33 fixed a real fidelity bug:** the MSPDI parser silently dropped percent-complete,
+  baselines, and resource assignments. That had made DCMA-09/10 *falsely fail* and
+  DCMA-11/13/14 *skip*. After the fix all 14 compute and match Acumen's picture
+  (severe baseline slip; declining BEI 0.74→0.59, CPLI 0.89→0.68 across two versions).
+- **Committed parity fixture** (`tests/fixtures/golden/commercial_construction_p5`):
+  CI now asserts **11/11** of our metrics match Acumen's numbers within tolerance.
+  Add more real cases via `docs/PARITY.md` (`scripts/parity_report.py`).
 
-DONE in earlier phases (see `PHASE-COMPLETE-9.md` and `-10.md`): UI port config;
-XER importer; EV SPI/SPI(t) (schema v1.1.0); CEI (schema v1.2.0); Phase-9 importer
-hardening; MPXJ-as-subprocess `.mpp`; COM importer (Linux-mapping-tested);
-**`.mpp`/`.mpx`/`.xer`/XML uploads wired into the webapp** (multi-file + MPXJ/COM
-reader choice); **CEI + trend surfaced** in the comparative UI + reports.
+---
 
-DONE this session (Phase 10; see `PHASE-COMPLETE-10.md`):
-- ✅ **SRA surfaced** (PR #29, merged): Monte-Carlo P50/P80/P95 + criticality index
-  in the dashboard + Excel/Word; computed once per analyze (size-capped + fail-safe);
-  method = reference parity, default spread = tool heuristic (labelled).
-- ✅ **Golden-file parity harness** (PR #30): `parity.py` + `scripts/parity_report.py`
-  + `docs/PARITY.md` + a self-regression golden case. Ready for real reference numbers.
-- ✅ **Version-diff surfaced** (PR #31): objective `diff_engine` deltas in the
-  comparative UI + Excel/Word ("Version-to-Version Changes" / "Version Diff").
+## 5. Open PR + what's next
 
-REMAINING — all HUMAN-IN-LOOP or input-constrained (cannot be done from Linux/CI alone):
-1. **Real reference-tool parity numbers**: the harness (PR #30) is ready; supply
-   Acumen Fuse / SSI / MS Project outputs for a known schedule as a golden case
-   (`docs/PARITY.md`) and triage any drift. This is the substantive parity claim.
-2. **Native `.mpp` + live MS Project validation on Windows**: validate the MPXJ
-   path and the COM importer against a REAL binary `.mpp` on a Windows box
-   (enum codes + minute units source-pending, gotcha 10). Cannot be authored on Linux.
-3. **CEI real-data validation**: confirm the program's CEI threshold (0.95 is the
-   common gate but source-pending — NDIA prefers a >75th-percentile trend) and the
-   XER `early_end_date`→`finish` mapping against real exports.
+- **OPEN — PR #41 (bundle MPXJ):** merge to make native `.mpp` work with only a JRE.
+- **Remaining / human-in-loop (need the operator or a Windows box):**
+  1. **More real reference cases** — only one Acumen fixture so far; drop in more
+     (and SSI / MS Project outputs) to broaden the parity guarantee.
+  2. **Windows validation of the COM `.mpp` reader** vs MPXJ/XML on a shared file
+     (never run against real MS Project — see `docs/HAZARDS.md` H-NO-COM-HERE).
+  3. **Earned value from `.mpp`:** `<Cost>`/budget isn't read yet, so SPI/SPI(t) skip
+     on cost-loaded schedules — a natural next parser increment.
+  4. **CEI threshold** confirmation (0.95 is source-pending; NDIA prefers a trend).
 
-**HUMAN-IN-LOOP (needs the user, do not attempt to wire alone): local Ollama model
-setup** (Phase-7 checkpoint). `OllamaBackend.summarize` is the wiring point and
-currently raises. The tool is fully functional without it via `NullInferenceBackend`.
-The cloud Claude backend stays hard-gated off under CUI.
+---
 
-## 6. Hard-won lessons (read before dispatching subagents)
+## 6. Conventions & gotchas (read before working)
 
-- **Trust but VERIFY subagent output.** Subagents have claimed "green" while
-  leaving real defects (e.g. report-author: python-docx `Document` factory misused
-  as a type; openpyxl sheets typed `object`; stale `# type: ignore`; a test
-  assuming openpyxl preserves whole floats — openpyxl round-trips `2.0`→`int 2`).
-  After any dispatch: read the code, run the full green bar yourself, and for the
-  UI run a real-server smoke test, BEFORE committing.
-- **The fan-out ran sequentially** (one `metric-author` at a time into the main
-  tree; the gitignored `.venv` makes worktree isolation impractical). Brief each
-  subagent precisely (exact APIs, file-ownership, "actually run the green bar"),
-  then verify + commit. Each metric module owns its file + test; do NOT let it edit
-  `REFERENCES.md` (update citations centrally to avoid conflicts).
-- **Don't judge a running agent as stalled by one file's mtime** — it may be
-  writing a *different* file. Wait for the completion signal; don't edit its files
-  mid-run (a concurrent edit caused a near-collision once).
-- **`Edit` with `replace_all` on a trailing comment can merge lines** if mishandled
-  — re-run the green bar after bulk edits.
-- **mypy + libraries:** python-docx ships `py.typed` (use `docx.document.Document`
-  for annotations, `docx.Document()` to construct; `.save()` needs `os.fspath`);
-  openpyxl needs the `ignore_missing_imports` override already in `pyproject.toml`.
-
-## 7. Workflow
-
-- Develop on a focused feature branch (recent series: `claude/eager-brown-OYDZw[-topic]`);
-  commit small, push after each green step (so nothing is lost if the container
-  recycles); open a **draft PR → `main`** per feature. The user squash-merges. Do
-  not push to `main` directly; never force-push a shared branch. (When stacking a
-  PR on an unmerged one that touches the same files, rebase onto `main` once the
-  base merges — see Phase 10's diff PR.)
-- File-ownership manifest is in `CLAUDE.md` — a subagent writes only files it owns.
-- End each phase with a `PHASE-COMPLETE-N.md` (directive §12 format).
-- **Standing user instruction (this build):** proceed autonomously — "do what you
-  recommend without asking"; the user only wants to be stopped for the two
-  human-in-loop checkpoints (Ollama setup; live-COM/MSP) or a genuine blocker.
-  Still: commit + push after each step, and beware context exhaustion
-  (H-SCOPE-CREEP) — a very long session degrades quality; prefer fresh context for
-  large new modules.
-
-## 8. Confidence / honesty
-
-NOT yet "production-ready" per the directive's full §11 (reserve that phrase until
-all criteria hold): live-MS Project field validation is Windows-local; golden-file
-parity needs user-supplied reference outputs. What exists is a complete, green,
-secure, offline local tool over FS/SS/FF/SF networks with common date constraints
-under the default calendar — with the gaps above named, not hidden.
+- **Green bar before every commit:** `ruff check`, `ruff format --check`, `mypy`
+  (strict on `src/`), `pytest` — all clean. CI runs the same on Python 3.11 + 3.13.
+- **Branch/PR flow:** focused feature branch (recent namespace
+  `claude/eager-brown-OYDZw-<topic>`) → **draft PR → `main`**; the operator squash-merges.
+  Never push to `main` directly; never force-push a shared branch.
+- **Branches are deleted on merge.** Each session, FIRST `git checkout main &&
+  git fetch --prune && git reset --hard origin/main` — local feature branches go stale
+  and their remotes disappear after squash-merge. (This bit every resume this build.)
+- **Parity-honesty:** SRA's *method* is reference parity but its default risk spread is
+  a tool heuristic; `diff_engine`/`trend` framing is objective-facts vs tool-extension;
+  the self-regression golden case is NOT a parity claim. Keep labeling honest.
+- **CUI / LAW 1:** never add a network egress path for schedule data; reports stream
+  from memory; real schedule files are never committed (`.gitignore` blocks them;
+  `local_parity/` holds real golden cases locally). The reference `.mpp` used this
+  session are non-CUI sample files per the operator.
+- **Phase reports:** `PHASE-COMPLETE-0/1/2/5/8/9/10.md` capture prior phases.
