@@ -13,6 +13,8 @@ from schedule_forensics.importers.msp_xml import (
     parse_msp_xml,
     parse_msp_xml_string,
 )
+from schedule_forensics.metrics_common import MetricStatus
+from schedule_forensics.performance_indices import compute_spi
 from schedule_forensics.schemas import ConstraintType, RelationType
 
 FIXTURE = Path(__file__).parent / "fixtures" / "msp_xml" / "simple_network.xml"
@@ -53,11 +55,12 @@ def _mspdi_with_progress() -> str:
         "<PercentComplete>100</PercentComplete>"
         "<ActualStart>2026-03-02T08:00:00</ActualStart>"
         "<ActualFinish>2026-03-03T17:00:00</ActualFinish>"
-        # Number=1 listed first; the primary baseline (Number=0) must still win.
+        # Number=1 listed first; the primary baseline (Number=0) must still win
+        # (its Start/Finish AND its Cost, not the decoy 9999).
         "<Baseline><Number>1</Number><Start>2030-01-01T08:00:00</Start>"
-        "<Finish>2030-01-02T17:00:00</Finish></Baseline>"
+        "<Finish>2030-01-02T17:00:00</Finish><Cost>9999</Cost></Baseline>"
         "<Baseline><Number>0</Number><Start>2026-03-02T08:00:00</Start>"
-        "<Finish>2026-03-04T17:00:00</Finish></Baseline>"
+        "<Finish>2026-03-04T17:00:00</Finish><Cost>1500.50</Cost></Baseline>"
         "</Task>"
         "<Task><UID>2</UID><Name>Bare</Name><Duration>PT8H0M0S</Duration></Task>"
         "</Tasks>"
@@ -85,6 +88,8 @@ def test_parses_percent_actuals_baseline_and_resources() -> None:
     # The primary baseline (Number=0) wins even though Number=1 is listed first.
     assert t1.baseline_start == dt.datetime(2026, 3, 2, 8)
     assert t1.baseline_finish == dt.datetime(2026, 3, 4, 17)
+    # ...and so does its <Cost> (the EV budget-at-completion), not the decoy 9999.
+    assert t1.budgeted_cost == pytest.approx(1500.50)
     # Resources resolved + de-duplicated in order; blank + unknown resource UIDs skipped.
     assert t1.resource_names == ("Carpenter", "Crane")
 
@@ -96,6 +101,7 @@ def test_missing_progress_fields_default_safely() -> None:
     assert t2.actual_start is None
     assert t2.baseline_start is None
     assert t2.baseline_finish is None
+    assert t2.budgeted_cost == 0.0  # no baseline cost -> excluded from earned value
     assert t2.resource_names == ()
 
 
@@ -203,6 +209,32 @@ def test_finish_and_actual_finish_are_read() -> None:
     task = parse_msp_xml_string(xml).tasks[0]
     assert task.finish == dt.datetime(2025, 2, 15, 17)
     assert task.actual_finish == dt.datetime(2025, 2, 10, 17)
+
+
+def test_baseline_cost_feeds_earned_value_spi() -> None:
+    # The point of reading baseline <Cost>: before it, SPI SKIPPED on every
+    # imported schedule (budgeted_cost defaulted to 0). With it, a cost-loaded
+    # MSPDI yields a real SPI end-to-end. Two equal-budget (100) tasks; the second
+    # is only half done at the status date -> EV 150 / PV 200 = 0.75 (the same
+    # hand-computed case as test_spi_behind_schedule, but sourced from XML).
+    xml = (
+        '<Project xmlns="http://schemas.microsoft.com/project">'
+        "<Name>EV</Name><StartDate>2025-01-06T08:00:00</StartDate>"
+        "<StatusDate>2025-01-08T08:00:00</StatusDate>"
+        "<Tasks>"
+        "<Task><UID>1</UID><Name>A</Name><Duration>PT8H0M0S</Duration>"
+        "<PercentComplete>100</PercentComplete>"
+        "<Baseline><Number>0</Number><Start>2025-01-06T08:00:00</Start>"
+        "<Finish>2025-01-07T08:00:00</Finish><Cost>100</Cost></Baseline></Task>"
+        "<Task><UID>2</UID><Name>B</Name><Duration>PT8H0M0S</Duration>"
+        "<PercentComplete>50</PercentComplete>"
+        "<Baseline><Number>0</Number><Start>2025-01-07T08:00:00</Start>"
+        "<Finish>2025-01-08T08:00:00</Finish><Cost>100</Cost></Baseline></Task>"
+        "</Tasks></Project>"
+    )
+    spi = compute_spi(parse_msp_xml_string(xml))
+    assert spi.status is MetricStatus.FAIL  # 0.75 < 0.95 -> computed, no longer SKIPPED
+    assert spi.measured == pytest.approx(0.75)
 
 
 def test_duration_mutation_is_actually_read() -> None:

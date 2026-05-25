@@ -21,7 +21,10 @@ Fidelity notes (LAW 2):
     ``<Baseline>`` with ``<Number>0</Number>``), and resource assignments
     (``<Resources>`` + ``<Assignments>``). These drive the progress-based DCMA
     checks (Invalid Dates, Resources, Missed Tasks, CPLI, BEI) and earned value;
-    without them those metrics SKIP. ``<Cost>``/budget is not yet read (EV BAC).
+    without them those metrics SKIP. The primary baseline ``<Cost>`` is read as
+    the earned-value budget-at-completion (BAC), so SPI/SPI(t) compute on
+    cost-loaded schedules (absent it ``budgeted_cost`` is 0 and they SKIP). This
+    matches the COM importer, which reads ``BaselineCost`` into the same field.
 """
 
 from __future__ import annotations
@@ -133,13 +136,32 @@ def _parse_percent(value: str | None) -> float:
     return min(max(pct, 0.0), 100.0)
 
 
-def _parse_baseline(task_el: ET.Element) -> tuple[dt.datetime | None, dt.datetime | None]:
-    """Primary baseline (``<Baseline><Number>0</Number>``) Start/Finish.
+def _parse_cost(value: str | None) -> float:
+    """Parse an MSPDI ``<Cost>`` (decimal currency units) into a non-negative float.
+
+    MSPDI writes monetary values as decimal currency units directly (no cents
+    scaling) -- the same convention the COM importer reads from ``BaselineCost``.
+    Absent/blank/unparseable/non-positive -> 0.0, which excludes the task from
+    earned value rather than fabricating a budget (LAW 2)."""
+    if value is None:
+        return 0.0
+    try:
+        cost = float(value)
+    except ValueError:
+        return 0.0
+    return cost if cost > 0.0 else 0.0
+
+
+def _parse_baseline(
+    task_el: ET.Element,
+) -> tuple[dt.datetime | None, dt.datetime | None, float]:
+    """Primary baseline (``<Baseline><Number>0</Number>``) Start/Finish/Cost.
 
     MSPDI nests baselines as ``<Baseline>`` children (a task may carry up to 11,
     numbered 0-10). Baseline 0 is the primary/project baseline that DCMA-11
-    (Missed Tasks), BEI, and earned-value PV are measured against. Falls back to
-    the first ``<Baseline>`` if none is explicitly numbered 0."""
+    (Missed Tasks), BEI, and earned-value PV are measured against; its ``<Cost>``
+    is the budget-at-completion (BAC) basis for SPI/SPI(t). Falls back to the
+    first ``<Baseline>`` if none is explicitly numbered 0."""
     chosen: ET.Element | None = None
     for bl in task_el.findall("Baseline"):
         if _child_text(bl, "Number") == "0":
@@ -148,10 +170,11 @@ def _parse_baseline(task_el: ET.Element) -> tuple[dt.datetime | None, dt.datetim
         if chosen is None:
             chosen = bl
     if chosen is None:
-        return None, None
+        return None, None, 0.0
     return (
         _parse_datetime(_child_text(chosen, "Start")),
         _parse_datetime(_child_text(chosen, "Finish")),
+        _parse_cost(_child_text(chosen, "Cost")),
     )
 
 
@@ -167,7 +190,7 @@ def _parse_task(task_el: ET.Element, resource_names: tuple[str, ...] = ()) -> Ta
     constraint_type = ConstraintType.ASAP
     if constraint_code is not None:
         constraint_type = _CONSTRAINT_BY_CODE.get(int(constraint_code), ConstraintType.ASAP)
-    baseline_start, baseline_finish = _parse_baseline(task_el)
+    baseline_start, baseline_finish, baseline_cost = _parse_baseline(task_el)
     return Task(
         unique_id=uid,
         name=_child_text(task_el, "Name") or f"Task {uid}",
@@ -183,6 +206,7 @@ def _parse_task(task_el: ET.Element, resource_names: tuple[str, ...] = ()) -> Ta
         actual_finish=_parse_datetime(_child_text(task_el, "ActualFinish")),
         baseline_start=baseline_start,
         baseline_finish=baseline_finish,
+        budgeted_cost=baseline_cost,
         resource_names=resource_names,
     )
 

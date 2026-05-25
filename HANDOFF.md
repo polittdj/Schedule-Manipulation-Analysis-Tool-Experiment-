@@ -9,14 +9,15 @@
 ## 0. Status snapshot (2026-05)
 
 - **Branch/state:** `main` is the integration branch; feature work lands via focused
-  **squash-merged PRs**. As of this writing `main` is green: **447 pass / 3 skip**,
+  **squash-merged PRs**. As of this writing `main` is green: **448 pass / 3 skip**,
   `ruff` + `ruff format` + `mypy --strict` clean, 28 source modules, **schema FROZEN
   at v1.2.0**.
 - **The tool works and runs locally** end-to-end: ingest → CPM → DCMA-14 +
   driving/critical path + Monte-Carlo SRA + multi-version CEI/trend/diff → Excel/Word
   reports → executive summary → dark localhost UI.
-- **ONE open PR:** **#41 "Bundle MPXJ runner"** — *merge this to fix native `.mpp`
-  uploads* (see §2.3). Everything else (#27–#40) is merged.
+- **No open PRs at last sync.** #41 "Bundle MPXJ runner" is **merged** (native
+  `.mpp` needs only a JRE; see §2.3); #42 rewrote this doc. Everything #27–#42 is
+  merged. The in-flight baseline-cost increment is on `claude/lucid-hopper-ao8qa` (§5).
 - **Validated against Acumen Fuse** on two real schedules (see §4).
 
 ---
@@ -89,7 +90,7 @@ model only *rephrases* the deterministic summary (never changes a number); it ru
 git checkout main && git pull
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e . && pip install -r requirements-dev.txt
-ruff check . && ruff format --check . && mypy && pytest      # expect: ~447 pass / 3 skip
+ruff check . && ruff format --check . && mypy && pytest      # expect: ~448 pass / 3 skip
 python -m schedule_forensics.webapp          # or: PYTHONPATH=src python -m schedule_forensics.webapp
 ```
 `src/` layout: `pytest` finds the package via `pythonpath=["src"]`; to run the webapp
@@ -124,17 +125,23 @@ library, this session):
 
 ---
 
-## 5. Open PR + what's next
+## 5. What's next
 
-- **OPEN — PR #41 (bundle MPXJ):** merge to make native `.mpp` work with only a JRE.
+- **No open PRs at last sync.** #41 (bundle MPXJ) is **merged** — native `.mpp`
+  needs only a JRE. *This branch* (`claude/lucid-hopper-ao8qa`) adds baseline-cost
+  ingestion (item 3 below) as a draft PR.
+- **Doable without the operator (code increments):**
+  3. **Earned value budget (BAC) — DONE on this branch:** the MSPDI/MPXJ importers
+     now read the primary baseline `<Cost>` into `budgeted_cost`, so SPI/SPI(t)
+     compute on cost-loaded schedules instead of skipping (mirrors the COM
+     importer's `BaselineCost`). Still unread: `<ActualCost>` (AC) — needed for a
+     cost-efficiency CPI/CEI, which also remains source-pending (`performance_indices.py`).
+  4. **CEI threshold** confirmation (0.95 is source-pending; NDIA prefers a trend).
 - **Remaining / human-in-loop (need the operator or a Windows box):**
   1. **More real reference cases** — only one Acumen fixture so far; drop in more
      (and SSI / MS Project outputs) to broaden the parity guarantee.
   2. **Windows validation of the COM `.mpp` reader** vs MPXJ/XML on a shared file
      (never run against real MS Project — see `docs/HAZARDS.md` H-NO-COM-HERE).
-  3. **Earned value from `.mpp`:** `<Cost>`/budget isn't read yet, so SPI/SPI(t) skip
-     on cost-loaded schedules — a natural next parser increment.
-  4. **CEI threshold** confirmation (0.95 is source-pending; NDIA prefers a trend).
 
 ---
 
