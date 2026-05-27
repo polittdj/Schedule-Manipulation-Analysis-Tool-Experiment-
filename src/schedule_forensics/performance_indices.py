@@ -26,15 +26,19 @@ Definitions (working-minute axis from ``project_start``; see ``cpm``):
     cost-based SPI spuriously recovers toward 1 as PV plateaus at BAC -- the
     reason earned schedule exists.
 
-Threshold: 0.95 (GE), the common EVM management trip level. This is NOT a hard
-DCMA-14 number (SPI/SPI(t) are not DCMA-14 checks); it is labelled accordingly
-and is page-anchor source-pending in docs/REFERENCES.md.
+Threshold: 0.95 (GE) -- a common EVM management "traffic-light" watch level
+(green > 0.95), NOT a codified standard trip and NOT a DCMA-14 check (SPI/SPI(t)
+are not among the 14). The index itself is standard EVM (ANSI/EIA-748);
+authoritative guidance (GAO Cost Estimating & Assessment Guide; NDIA IPMD) favours
+*trend* over a fixed point value, so 0.95 is a program-configurable default. It is
+labelled accordingly and remains source-pending in docs/REFERENCES.md.
 
-NOTE (CEI deliberately deferred): a "CEI" was named in the build plan, but it has
-no single citable definition in this domain (it is variously a cost-efficiency
-index CPI=EV/AC, which would need an ``actual_cost`` field, or an Acumen-specific
-metric). Per LAW 2 we do NOT ship a guessed formula; CEI is **source-pending**
-and intentionally NOT implemented here (see docs/REFERENCES.md).
+NOTE (no cost-efficiency index here): a cost-efficiency CPI = EV/AC is NOT
+implemented -- it would need an ``actual_cost`` field this schema does not carry,
+and per LAW 2 we ship no guessed formula. That is distinct from the **Current
+Execution Index (CEI)**, a count-based per-period throughput metric (PASEG 10.4.5)
+that IS implemented separately in ``cei.py``; CEI is not an earned-value cost index
+and so is deliberately not duplicated here (see docs/REFERENCES.md).
 
 Single source of truth (H-DRIFT-2): each threshold is a module-level
 :class:`~schedule_forensics.metrics_common.Threshold`; a parametrized test pins
@@ -57,12 +61,16 @@ from schedule_forensics.metrics_common import (
 from schedule_forensics.schemas import Schedule
 
 _SRC_SPI = (
-    "NASA-EVM SPI = BCWP/BCWS (earned value / planned value); 0.95 is the common "
-    "EVM management threshold (not a DCMA-14 number); page-anchor source-pending"
+    "NASA-EVM / ANSI-EIA-748 EVM index SPI = BCWP/BCWS (earned value / planned value). "
+    "0.95 is a common management traffic-light watch level (green >0.95), not a codified "
+    "trip and not a DCMA-14 check; GAO Cost Estimating & Assessment Guide and NDIA IPMD "
+    "favour trend, so 0.95 is a program-configurable default (source-pending)"
 )
 _SRC_SPIT = (
-    "NASA-EVM / Lipke Earned Schedule: SPI(t) = ES/AT; 0.95 is the common EVM "
-    "management threshold (not a DCMA-14 number); page-anchor source-pending"
+    "NASA-EVM / Lipke earned schedule SPI(t) = ES/AT (index per ANSI-EIA-748; Lipke, "
+    "'Earned Schedule'). 0.95 is the same management traffic-light watch level, not "
+    "codified and not a DCMA-14 check; GAO and NDIA IPMD favour trend, so 0.95 is a "
+    "program-configurable default (source-pending)"
 )
 
 THRESHOLD_SPI = Threshold(value=0.95, direction=Direction.GE, source=_SRC_SPI)

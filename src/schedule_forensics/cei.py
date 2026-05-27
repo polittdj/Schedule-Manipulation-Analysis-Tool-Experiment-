@@ -41,8 +41,10 @@ from schedule_forensics.version_matcher import order_versions
 
 _SRC_CEI = (
     "PASEG 10.4.5 / NDIA IPMD Predictive Measures (CEI = finished / forecast-to-finish, "
-    "per period); >=0.95 is the common gate but is source-pending (VERIFY the program's "
-    "threshold; NDIA prefers a >75th-percentile trend). Snapshot capture is tool-original."
+    "per period); >=0.95 is a common dashboard gate but is source-pending (VERIFY the "
+    "program's contractual threshold). CEI is reported per period -- i.e. as a trend -- "
+    "which is how NDIA IPMD frames a healthy CEI (above the 75th percentile), with 0.95 "
+    "applied as the per-period management gate. Snapshot capture is tool-original."
 )
 
 # CEI pass gate. Value is the common dashboard threshold; direction GE. Cited above
