@@ -205,3 +205,148 @@ def analyze_driving_path(schedule: Schedule, result: CPMResult | None = None) ->
         driving_chain=tuple(reversed(chain_reversed)),
         link_slacks=tuple(link_slacks),
     )
+
+
+# ── Top-K paths to a user-chosen target (critical / secondary / tertiary) ─────
+#
+# When the operator picks a SPECIFIC target activity (e.g. a contract milestone
+# that is NOT the project's overall finish), they typically want three things:
+# the longest activity chain ending there (the "critical path *to that target*"),
+# plus the next two longest alternative chains for "secondary" and "tertiary"
+# path analysis. The K=1 result is the standard CPM-longest-path concept (sum of
+# activity durations along the chain); K=2/3 are a TOOL-ORIGINAL extension --
+# they are not a reference-tool definition and are labelled accordingly. The
+# enumeration uses a topological-order DP over the schedule's relation DAG,
+# tracking the top-K longest paths ending at each node in O((V + E) * K).
+
+
+@dataclass(frozen=True)
+class PathToTarget:
+    """One ordered chain of activity UIDs ending at the chosen target.
+
+    ``task_uids`` are in start -> target order (matching ``driving_chain``).
+    ``duration_minutes`` is the sum of activity ``duration_minutes`` along the
+    chain (working minutes). ``is_driving`` is true iff EVERY relationship on
+    the chain has zero relationship free float (the chain is an unbroken SSI
+    binding chain end-to-end).
+    """
+
+    task_uids: tuple[int, ...]
+    duration_minutes: int
+    is_driving: bool
+
+
+@dataclass(frozen=True)
+class PathsToTargetResult:
+    """The top-K longest activity chains ending at ``target_uid``.
+
+    ``paths`` is ranked by ``duration_minutes`` descending (ties broken by the
+    smallest start-task ``unique_id``). Up to ``k`` entries; an empty tuple when
+    the target has no reachable predecessors and is a root activity itself
+    (then the single-element path ``(target_uid,)`` IS returned for ``k >= 1``).
+    """
+
+    target_uid: int
+    paths: tuple[PathToTarget, ...]
+
+
+def analyze_paths_to_target(
+    schedule: Schedule,
+    target_uid: int,
+    result: CPMResult | None = None,
+    *,
+    k: int = 3,
+) -> PathsToTargetResult:
+    """Top-``k`` longest activity chains terminating at ``target_uid``.
+
+    Critical / secondary / tertiary path analysis for a chosen end-task. A
+    "path" is an ordered chain of non-summary scheduled activities connected
+    by predecessor->successor relations in the schedule; the chain's length
+    is the sum of activity ``duration_minutes`` along it (working minutes).
+    Paths are ranked by length descending, ties broken by the smallest start
+    UID for determinism.
+
+    The K=1 path matches the standard CPM-longest-path concept; K=2/3 are a
+    **tool-original extension** (parity honesty -- no single reference-tool
+    definition for "second / third critical path").
+
+    Raises :class:`ValueError` if ``target_uid`` is not a scheduled activity
+    in the CPM result (missing, a summary, or unschedulable). Raises if ``k``
+    is negative. Returns an empty :class:`PathsToTargetResult` when ``k == 0``.
+    """
+    if k < 0:
+        raise ValueError(f"k must be non-negative; got {k}")
+    cpm = result if result is not None else compute_cpm(schedule)
+    timings = cpm.timings
+    if target_uid not in timings:
+        raise ValueError(
+            f"target UID {target_uid} is not a scheduled activity in this schedule "
+            "(it may be missing, a summary, or unschedulable)."
+        )
+    if k == 0:
+        return PathsToTargetResult(target_uid=target_uid, paths=())
+
+    duration_by_id: dict[int, int] = {t.unique_id: t.duration_minutes for t in schedule.tasks}
+
+    # Predecessor map (non-summary endpoints only) + per-edge "is driving" flag.
+    preds_by_succ: dict[int, list[int]] = {}
+    edge_drives: dict[tuple[int, int], bool] = {}
+    for rel in schedule.relations:
+        pred_t = timings.get(rel.predecessor_id)
+        succ_t = timings.get(rel.successor_id)
+        if pred_t is None or succ_t is None:
+            continue
+        preds_by_succ.setdefault(rel.successor_id, []).append(rel.predecessor_id)
+        slack = _relationship_free_float(
+            rel.type,
+            pred_t.early_start,
+            pred_t.early_finish,
+            succ_t.early_start,
+            succ_t.early_finish,
+            rel.lag_minutes,
+        )
+        edge_drives[(rel.predecessor_id, rel.successor_id)] = slack == 0
+
+    # Topo-sort timings.keys() via Kahn's algorithm (CPM rejects cycles, so this
+    # always completes; the assertion below guards a never-should-happen state).
+    in_deg: dict[int, int] = {tid: len(preds_by_succ.get(tid, [])) for tid in timings}
+    succs_by_pred: dict[int, list[int]] = {}
+    for succ, preds in preds_by_succ.items():
+        for p in preds:
+            succs_by_pred.setdefault(p, []).append(succ)
+    ready: list[int] = sorted(tid for tid, d in in_deg.items() if d == 0)
+    ordered: list[int] = []
+    while ready:
+        node = ready.pop(0)
+        ordered.append(node)
+        for s in sorted(succs_by_pred.get(node, [])):
+            in_deg[s] -= 1
+            if in_deg[s] == 0:
+                ready.append(s)
+    assert len(ordered) == len(timings), "internal: topo sort failed despite acyclic CPM"
+
+    # DP: at each node, keep the top-K longest paths ending there.
+    # Entry = (duration_minutes, task_uids in start->node order, all_driving_flag)
+    paths_at: dict[int, list[tuple[int, tuple[int, ...], bool]]] = {}
+    for node in ordered:
+        node_dur = duration_by_id.get(node, 0)
+        preds = preds_by_succ.get(node, [])
+        if not preds:
+            paths_at[node] = [(node_dur, (node,), True)]
+            continue
+        candidates: list[tuple[int, tuple[int, ...], bool]] = []
+        for p in preds:
+            link_driving = edge_drives.get((p, node), False)
+            for dur_p, chain_p, drv_p in paths_at.get(p, []):
+                candidates.append((dur_p + node_dur, (*chain_p, node), drv_p and link_driving))
+        candidates.sort(key=lambda c: (-c[0], c[1][0]))
+        paths_at[node] = candidates[:k]
+
+    final = paths_at.get(target_uid, [])
+    return PathsToTargetResult(
+        target_uid=target_uid,
+        paths=tuple(
+            PathToTarget(task_uids=chain, duration_minutes=dur, is_driving=adr)
+            for dur, chain, adr in final
+        ),
+    )

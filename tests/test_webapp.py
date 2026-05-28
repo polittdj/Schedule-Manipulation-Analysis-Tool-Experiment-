@@ -841,3 +841,96 @@ def test_dashboard_phases_card_durations_are_day_labelled(client: object) -> Non
     assert "1 day" in html
     # Phase 2: 2025-01-07 → 2025-01-17 = exactly 10 days → "10 days".
     assert "10 days" in html
+
+
+# ── Target-UID path analysis (critical / secondary / tertiary to chosen end) ──
+
+
+def _diamond_msp_xml(status_date: str = "2025-01-31T17:00:00") -> bytes:
+    """A 4-task diamond MSPDI: 1 -> {2-long, 3-short} -> 4. Two paths to UID 4."""
+    return (
+        '<Project xmlns="http://schemas.microsoft.com/project">'
+        f"<Name>diamond</Name><StartDate>2025-01-06T08:00:00</StartDate>"
+        f"<StatusDate>{status_date}</StatusDate><Tasks>"
+        "<Task><UID>1</UID><Name>A</Name><Duration>PT8H0M0S</Duration></Task>"
+        "<Task><UID>2</UID><Name>B-long</Name><Duration>PT24H0M0S</Duration>"
+        "<PredecessorLink><PredecessorUID>1</PredecessorUID><Type>1</Type></PredecessorLink>"
+        "</Task>"
+        "<Task><UID>3</UID><Name>C-short</Name><Duration>PT8H0M0S</Duration>"
+        "<PredecessorLink><PredecessorUID>1</PredecessorUID><Type>1</Type></PredecessorLink>"
+        "</Task>"
+        "<Task><UID>4</UID><Name>D</Name><Duration>PT8H0M0S</Duration>"
+        "<PredecessorLink><PredecessorUID>2</PredecessorUID><Type>1</Type></PredecessorLink>"
+        "<PredecessorLink><PredecessorUID>3</PredecessorUID><Type>1</Type></PredecessorLink>"
+        "</Task></Tasks></Project>"
+    ).encode()
+
+
+def test_analyze_with_target_uid_renders_path_card(client: object) -> None:
+    """Submitting a target UID surfaces a "Path Analysis to Target UID X" card."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    resp = c.post(
+        "/analyze",
+        data={
+            "schedule_files": (io.BytesIO(_diamond_msp_xml()), "diamond.xml"),
+            "target_uid": "4",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Path Analysis to Target UID" in body
+    assert "Critical" in body and "Secondary" in body  # the rank labels are rendered
+    # Critical path = (1, 2, 4); rendered as "1 → 2 → 4" (unicode arrow).
+    assert "1 → 2 → 4" in body
+    assert "1 → 3 → 4" in body  # secondary path
+    # paths_to_target on the stored analysis carries both chains, K=2 returned.
+    analysis = _STATE.get("analysis")
+    assert analysis is not None
+    assert analysis.target_uid == 4
+    assert len(analysis.paths_to_target) == 2
+    assert analysis.paths_to_target[0].task_uids == (1, 2, 4)
+    assert analysis.paths_to_target[1].task_uids == (1, 3, 4)
+
+
+def test_analyze_with_invalid_target_uid_returns_400(client: object) -> None:
+    """A non-integer target UID short-circuits with a clear error (LAW 2: fail closed)."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    resp = c.post(
+        "/analyze",
+        data={
+            "schedule_files": (io.BytesIO(_diamond_msp_xml()), "diamond.xml"),
+            "target_uid": "not-a-number",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    body = resp.data.decode()
+    assert "Target UID must be a whole number" in body
+
+
+def test_analyze_with_unknown_target_uid_surfaces_note(client: object) -> None:
+    """An integer target UID that is not in the schedule yields a note, not a crash."""
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    resp = c.post(
+        "/analyze",
+        data={
+            "schedule_files": (io.BytesIO(_diamond_msp_xml()), "diamond.xml"),
+            "target_uid": "999",  # not in the schedule
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200  # analysis still completes (without target paths)
+    body = resp.data.decode()
+    assert "Path Analysis to Target UID" in body  # the card surfaces the note
+    assert "999" in body  # the offending UID is named
+    # No actual paths were computed (the target wasn't in the schedule).
+    analysis = _STATE.get("analysis")
+    assert analysis is not None
+    assert analysis.paths_to_target == ()

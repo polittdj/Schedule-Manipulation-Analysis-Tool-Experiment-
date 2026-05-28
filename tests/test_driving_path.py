@@ -329,3 +329,148 @@ def test_cycle_propagates_cpm_error() -> None:
     )
     with pytest.raises(CPMError):
         analyze_driving_path(schedule)
+
+
+# ── analyze_paths_to_target: top-K longest chains to a user-chosen endpoint ──
+#
+# Each test perturbs one branch length / target / k value and asserts the
+# specific top-K result that must come back (non-vacuous: a wrong ordering, a
+# wrong duration-sum, or a wrong K cap would fail by name).
+
+
+def _diamond_for_topk() -> Schedule:
+    """A 4-task diamond: 1 -> {2, 3} -> 4, with branch 2 longer than branch 3.
+
+    Task 1: 480 (1d); task 2: 1440 (3d); task 3: 480 (1d); task 4: 480 (1d).
+    Two start->4 paths: (1, 2, 4) duration 480+1440+480=2400; (1, 3, 4) duration
+    480+480+480=1440. (1, 2, 4) is the critical path (longest); (1, 3, 4) is
+    the secondary path (next-longest). No third path exists.
+    """
+    return _sched(
+        [
+            Task(unique_id=1, name="A", duration_minutes=480),
+            Task(unique_id=2, name="B-long", duration_minutes=1440),
+            Task(unique_id=3, name="C-short", duration_minutes=480),
+            Task(unique_id=4, name="D", duration_minutes=480),
+        ],
+        [
+            Relation(predecessor_id=1, successor_id=2),
+            Relation(predecessor_id=1, successor_id=3),
+            Relation(predecessor_id=2, successor_id=4),
+            Relation(predecessor_id=3, successor_id=4),
+        ],
+    )
+
+
+def test_paths_to_target_linear_chain_returns_single_path() -> None:
+    """A linear chain has exactly one path to the end-task; K=3 still returns 1."""
+    from schedule_forensics.driving_path import analyze_paths_to_target
+
+    schedule = _sched(
+        [
+            Task(unique_id=1, name="A", duration_minutes=960),
+            Task(unique_id=2, name="B", duration_minutes=1440),
+            Task(unique_id=3, name="C", duration_minutes=480),
+        ],
+        [
+            Relation(predecessor_id=1, successor_id=2),
+            Relation(predecessor_id=2, successor_id=3),
+        ],
+    )
+    res = analyze_paths_to_target(schedule, target_uid=3, k=3)
+    assert res.target_uid == 3
+    assert len(res.paths) == 1
+    assert res.paths[0].task_uids == (1, 2, 3)
+    assert res.paths[0].duration_minutes == 960 + 1440 + 480
+    assert res.paths[0].is_driving is True  # both links are zero-slack
+
+
+def test_paths_to_target_diamond_returns_critical_then_secondary() -> None:
+    """Two branches to the same sink: K=3 returns 2 paths ranked by duration."""
+    from schedule_forensics.driving_path import analyze_paths_to_target
+
+    res = analyze_paths_to_target(_diamond_for_topk(), target_uid=4, k=3)
+    assert res.target_uid == 4
+    assert len(res.paths) == 2  # only two distinct paths exist (1->2->4 and 1->3->4)
+    # Critical = longest: (1, 2, 4), 2400 minutes (5 days).
+    assert res.paths[0].task_uids == (1, 2, 4)
+    assert res.paths[0].duration_minutes == 2400
+    assert res.paths[0].is_driving is True  # this IS the CPM longest chain
+    # Secondary = next-longest: (1, 3, 4), 1440 minutes (3 days).
+    assert res.paths[1].task_uids == (1, 3, 4)
+    assert res.paths[1].duration_minutes == 1440
+    # Branch 3 has positive relationship free float -> the secondary chain has at
+    # least one non-driving link -> the whole chain is not "all driving".
+    assert res.paths[1].is_driving is False
+
+
+def test_paths_to_target_three_branches_are_ranked_descending() -> None:
+    """Three convergent branches → K=3 returns all three in critical/secondary/tertiary order."""
+    from schedule_forensics.driving_path import analyze_paths_to_target
+
+    # A=1 -> X=2(3d) -> T=10, A -> Y=3(2d) -> T, A -> Z=4(1d) -> T. Common A and T.
+    schedule = _sched(
+        [
+            Task(unique_id=1, name="A", duration_minutes=480),
+            Task(unique_id=2, name="X-long", duration_minutes=1440),
+            Task(unique_id=3, name="Y-med", duration_minutes=960),
+            Task(unique_id=4, name="Z-short", duration_minutes=480),
+            Task(unique_id=10, name="T", duration_minutes=480),
+        ],
+        [
+            Relation(predecessor_id=1, successor_id=2),
+            Relation(predecessor_id=1, successor_id=3),
+            Relation(predecessor_id=1, successor_id=4),
+            Relation(predecessor_id=2, successor_id=10),
+            Relation(predecessor_id=3, successor_id=10),
+            Relation(predecessor_id=4, successor_id=10),
+        ],
+    )
+    res = analyze_paths_to_target(schedule, target_uid=10, k=3)
+    assert [p.task_uids for p in res.paths] == [(1, 2, 10), (1, 3, 10), (1, 4, 10)]
+    assert [p.duration_minutes for p in res.paths] == [
+        480 + 1440 + 480,
+        480 + 960 + 480,
+        480 + 480 + 480,
+    ]
+
+
+def test_paths_to_target_k_clamps_returned_count() -> None:
+    """K=1 on the diamond returns just the critical path; K=0 returns no paths."""
+    from schedule_forensics.driving_path import analyze_paths_to_target
+
+    schedule = _diamond_for_topk()
+    only = analyze_paths_to_target(schedule, target_uid=4, k=1)
+    assert len(only.paths) == 1
+    assert only.paths[0].task_uids == (1, 2, 4)
+
+    none = analyze_paths_to_target(schedule, target_uid=4, k=0)
+    assert none.target_uid == 4
+    assert none.paths == ()
+
+
+def test_paths_to_target_missing_uid_raises() -> None:
+    """A target UID that is not a scheduled activity raises ValueError."""
+    from schedule_forensics.driving_path import analyze_paths_to_target
+
+    with pytest.raises(ValueError, match="not a scheduled activity"):
+        analyze_paths_to_target(_diamond_for_topk(), target_uid=999, k=3)
+
+
+def test_paths_to_target_negative_k_raises() -> None:
+    """Negative K is a programming error: fail closed (LAW 2)."""
+    from schedule_forensics.driving_path import analyze_paths_to_target
+
+    with pytest.raises(ValueError, match="k must be non-negative"):
+        analyze_paths_to_target(_diamond_for_topk(), target_uid=4, k=-1)
+
+
+def test_paths_to_target_target_is_root_yields_one_singleton_path() -> None:
+    """A target activity that has no predecessors is its own single-element path."""
+    from schedule_forensics.driving_path import analyze_paths_to_target
+
+    schedule = _sched([Task(unique_id=7, name="alone", duration_minutes=480)])
+    res = analyze_paths_to_target(schedule, target_uid=7, k=3)
+    assert len(res.paths) == 1
+    assert res.paths[0].task_uids == (7,)
+    assert res.paths[0].duration_minutes == 480

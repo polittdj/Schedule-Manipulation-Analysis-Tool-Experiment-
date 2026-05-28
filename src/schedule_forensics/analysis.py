@@ -22,7 +22,11 @@ from dataclasses import dataclass
 from schedule_forensics.cpm import CPMError, CPMResult, TaskTiming, compute_cpm
 from schedule_forensics.dcma_checks import run_structural_checks
 from schedule_forensics.dcma_progress import run_progress_checks
-from schedule_forensics.driving_path import analyze_driving_path
+from schedule_forensics.driving_path import (
+    PathToTarget,
+    analyze_driving_path,
+    analyze_paths_to_target,
+)
 from schedule_forensics.metrics_common import MetricResult, MetricStatus
 from schedule_forensics.performance_indices import run_performance_indices
 from schedule_forensics.schemas import Schedule
@@ -53,10 +57,22 @@ class ScheduleAnalysis:
     findings: tuple[str, ...]
     cpm_error: str | None
     performance_indices: tuple[MetricResult, ...] = ()
+    # Optional path analysis to an operator-chosen target activity. When
+    # ``target_uid`` is set, ``paths_to_target`` carries the top-3 longest
+    # activity chains ending at that task (critical / secondary / tertiary).
+    # Both are empty when the caller did not supply a target.
+    target_uid: int | None = None
+    paths_to_target: tuple[PathToTarget, ...] = ()
 
 
-def analyze_schedule(schedule: Schedule) -> ScheduleAnalysis:
-    """Compose the CPM, the full DCMA-14 assessment, and the driving path."""
+def analyze_schedule(schedule: Schedule, *, target_uid: int | None = None) -> ScheduleAnalysis:
+    """Compose the CPM, the full DCMA-14 assessment, and the driving path.
+
+    When ``target_uid`` is given, additionally compute the top-3 longest
+    activity chains ending at that task (critical / secondary / tertiary path
+    analysis to a chosen end-task). Raises ``ValueError`` if ``target_uid`` is
+    not a scheduled activity in this schedule.
+    """
     cpm: CPMResult | None
     cpm_error: str | None = None
     try:
@@ -81,6 +97,12 @@ def analyze_schedule(schedule: Schedule) -> ScheduleAnalysis:
     # health_score/findings on purpose). SKIPPED unless EV data is present.
     performance_indices = run_performance_indices(schedule)
 
+    # Optional path analysis to an operator-chosen target activity. Only runs when
+    # the CPM succeeded -- without timings there's nothing to enumerate.
+    paths_to_target: tuple[PathToTarget, ...] = ()
+    if target_uid is not None and cpm is not None:
+        paths_to_target = analyze_paths_to_target(schedule, target_uid, cpm).paths
+
     return ScheduleAnalysis(
         project_finish=cpm.project_finish if cpm is not None else None,
         critical_path=cpm.critical_path if cpm is not None else (),
@@ -91,4 +113,6 @@ def analyze_schedule(schedule: Schedule) -> ScheduleAnalysis:
         findings=findings,
         cpm_error=cpm_error,
         performance_indices=performance_indices,
+        target_uid=target_uid,
+        paths_to_target=paths_to_target,
     )

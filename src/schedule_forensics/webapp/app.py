@@ -139,6 +139,8 @@ _STATE: dict[str, Any] = {
     "diffs": (),
     "phases": (),
     "phases_note": None,
+    "target_uid": None,
+    "paths_to_target_note": None,
 }
 
 
@@ -155,6 +157,8 @@ def _clear_state() -> None:
     _STATE["diffs"] = ()
     _STATE["phases"] = ()
     _STATE["phases_note"] = None
+    _STATE["target_uid"] = None
+    _STATE["paths_to_target_note"] = None
 
 
 # ── Inline HTML template (no external assets — LAW 1) ─────────────────────────
@@ -362,6 +366,14 @@ _TEMPLATE = """<!DOCTYPE html>
                   placeholder='{"name":"My Project","project_start":"2025-01-06T08:00:00",
 "tasks":[...]}'
         >{{ json_prefill or "" }}</textarea>
+      </div>
+      <div style="margin-bottom:14px;">
+        <label for="target_uid">Target UniqueID (optional) &mdash;
+          pick a specific activity to use as the critical end-task for
+          critical / secondary / tertiary path analysis:</label>
+        <input type="number" id="target_uid" name="target_uid"
+               value="{{ target_uid_prefill or '' }}" placeholder="(optional, e.g. 42)"
+               style="font-size:14px;padding:6px 8px;width:160px;">
       </div>
       <div class="btn-row">
         <button type="submit" class="btn btn-primary">Analyze</button>
@@ -639,6 +651,47 @@ _TEMPLATE = """<!DOCTYPE html>
       {% endif %}
     </div>
   </div>
+
+  {% if paths_to_target_note or (analysis and analysis.paths_to_target) %}
+  <div class="card">
+    <h3>Path Analysis to Target UID
+      {% if analysis and analysis.target_uid is not none %}{{ analysis.target_uid }}{% endif %}
+      <span class="ext-tag" title="K=2/3 are a tool-original extension">ext</span>
+    </h3>
+    {% if paths_to_target_note %}
+      <div class="error-box">{{ paths_to_target_note }}</div>
+    {% endif %}
+    {% if analysis and analysis.paths_to_target %}
+    <p style="color:var(--text-dim);margin-bottom:8px;">
+      Top {{ analysis.paths_to_target|length }} longest activity chains ending at UID
+      {{ analysis.target_uid }} (total duration = sum of activity durations on the chain).
+    </p>
+    <table>
+      <thead>
+        <tr><th>Rank</th><th>Path</th><th>Activities</th>
+            <th>Total duration</th><th>Binding?</th></tr>
+      </thead>
+      <tbody>
+        {% for p in analysis.paths_to_target %}
+        {% set rank_labels = ["Critical", "Secondary", "Tertiary"] %}
+        <tr>
+          <td>{{ rank_labels[loop.index0] if loop.index0 < 3 else "#" ~ loop.index }}</td>
+          <td>{{ p.task_uids | join(" → ") }}</td>
+          <td>{{ p.task_uids | length }}</td>
+          <td>{{ (p.duration_minutes / 480.0) | days }}</td>
+          <td>{% if p.is_driving %}driving (zero-slack chain){% else %}&mdash;{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+      <span class="ext-tag">ext</span> The K=1 path is the standard CPM longest path to
+      the target; K=2 (Secondary) and K=3 (Tertiary) rank the next-longest alternative
+      chains and are a tool-original extension (not a single reference-tool concept).
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <!-- Executive summary -->
   <div class="card">
@@ -919,11 +972,29 @@ def _compute_phases_view(
         return (), f"Phases unavailable: {exc}."
 
 
-def _store_results(parsed: list[tuple[str, Schedule]]) -> None:
-    """Populate _STATE from the parsed (filename, Schedule) pairs."""
+def _store_results(
+    parsed: list[tuple[str, Schedule]],
+    *,
+    target_uid: int | None = None,
+) -> None:
+    """Populate _STATE from the parsed (filename, Schedule) pairs.
+
+    When ``target_uid`` is given, the LATEST version's analysis is recomputed
+    so it carries ``paths_to_target`` (critical / secondary / tertiary path
+    analysis to the chosen end-task). An invalid target UID is stored as a
+    note (``paths_to_target_note``) rather than aborting the whole analysis.
+    """
     schedules = [sched for _, sched in parsed]
     analyses = [analyze_schedule(sched) for sched in schedules]
     latest = _latest_index(schedules)
+    note: str | None = None
+    if target_uid is not None:
+        try:
+            analyses[latest] = analyze_schedule(schedules[latest], target_uid=target_uid)
+        except ValueError as exc:
+            note = str(exc)
+    _STATE["target_uid"] = target_uid
+    _STATE["paths_to_target_note"] = note
     _STATE["schedule"] = schedules[latest]
     _STATE["analysis"] = analyses[latest]
     sra_result, sra_note = _compute_sra(schedules[latest])
@@ -1033,6 +1104,7 @@ def _render_page(
     error: str | None = None,
     json_prefill: str | None = None,
     mpp_reader: str = MPP_READER_MPXJ,
+    target_uid_prefill: str | None = None,
     status: int = 200,
 ) -> ResponseReturnValue:
     """Render the page from current _STATE (single dashboard + comparative section)."""
@@ -1059,6 +1131,8 @@ def _render_page(
         diffs=_diffs_view(_STATE.get("diffs") or ()),
         phases=_STATE.get("phases") or (),
         phases_note=_STATE.get("phases_note"),
+        target_uid_prefill=target_uid_prefill,
+        paths_to_target_note=_STATE.get("paths_to_target_note"),
     )
     return (html, status) if status != 200 else html
 
@@ -1105,6 +1179,20 @@ def create_app() -> Flask:
         mpp_reader = (request.form.get("mpp_reader") or MPP_READER_MPXJ).strip().lower()
         if mpp_reader not in _VALID_MPP_READERS:
             mpp_reader = MPP_READER_MPXJ
+        # Optional target UID for critical / secondary / tertiary path analysis.
+        target_raw = (request.form.get("target_uid") or "").strip()
+        target_uid: int | None = None
+        if target_raw:
+            try:
+                target_uid = int(target_raw)
+            except ValueError:
+                return _render_page(
+                    error=(f"Target UID must be a whole number; got {target_raw!r}."),
+                    json_prefill=json_text or None,
+                    mpp_reader=mpp_reader,
+                    target_uid_prefill=target_raw,
+                    status=400,
+                )
 
         parsed: list[tuple[str, Schedule]] = []
         error: str | None = None
@@ -1149,11 +1237,15 @@ def create_app() -> Flask:
 
         if error is not None:
             return _render_page(
-                error=error, json_prefill=json_text or None, mpp_reader=mpp_reader, status=400
+                error=error,
+                json_prefill=json_text or None,
+                mpp_reader=mpp_reader,
+                target_uid_prefill=target_raw or None,
+                status=400,
             )
 
-        _store_results(parsed)
-        return _render_page(mpp_reader=mpp_reader)
+        _store_results(parsed, target_uid=target_uid)
+        return _render_page(mpp_reader=mpp_reader, target_uid_prefill=target_raw or None)
 
     @app.post("/wipe")
     def wipe() -> ResponseReturnValue:
