@@ -913,6 +913,41 @@ def test_analyze_with_invalid_target_uid_returns_400(client: object) -> None:
     assert "Target UID must be a whole number" in body
 
 
+def test_analyze_surfaces_unexpected_analysis_error(
+    client: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unhandled error from _store_results renders a 500 with a clear message + logs.
+
+    Operators previously saw Flask's generic 500 page when something failed in the
+    multi-version compose stage (CEI / trends / diff / phases / paths-to-target),
+    with no clue what went wrong. The /analyze handler now catches the error,
+    wipes any partial state (LAW 1), and surfaces the exception class + message.
+    """
+    from schedule_forensics.webapp import app as webapp_app
+
+    def _boom(*_a: object, **_kw: object) -> None:
+        raise RuntimeError("kaboom in _store_results")
+
+    monkeypatch.setattr(webapp_app, "_store_results", _boom)
+
+    from flask.testing import FlaskClient
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    resp = c.post(
+        "/analyze",
+        data={"schedule_files": (io.BytesIO(_diamond_msp_xml()), "diamond.xml")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 500
+    body = resp.data.decode()
+    assert "Analysis failed" in body
+    assert "RuntimeError" in body
+    assert "kaboom" in body
+    # Partial state must be wiped on failure (no leftover analysis dashboard).
+    assert _STATE.get("analysis") is None
+    assert _STATE.get("versions") == []
+
+
 def test_analyze_with_unknown_target_uid_surfaces_note(client: object) -> None:
     """An integer target UID that is not in the schedule yields a note, not a crash."""
     from flask.testing import FlaskClient

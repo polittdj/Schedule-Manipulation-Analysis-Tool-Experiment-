@@ -1244,7 +1244,29 @@ def create_app() -> Flask:
                 status=400,
             )
 
-        _store_results(parsed, target_uid=target_uid)
+        # Combine / analyze the parsed schedules. Any failure here (e.g. a
+        # version-set edge case in CEI / trends / diff / phases / paths-to-target)
+        # is caught and surfaced as an error page rather than leaking a 500 to
+        # the operator. The full traceback is logged to the server console
+        # (PowerShell on Windows) so the operator can copy-paste it for triage.
+        # Partial state is wiped so a previous good analysis is not silently
+        # left in place after a failed combine (LAW 1 + LAW 2).
+        try:
+            _store_results(parsed, target_uid=target_uid)
+        except Exception as exc:  # noqa: BLE001 -- surface any analysis failure to the user
+            app.logger.exception("analyze: _store_results failed on %d file(s)", len(parsed))
+            _clear_state()
+            return _render_page(
+                error=(
+                    f"Analysis failed while combining {len(parsed)} file(s): "
+                    f"{type(exc).__name__}: {exc}. The full traceback is in the "
+                    "server console (the PowerShell window where the tool is running)."
+                ),
+                json_prefill=json_text or None,
+                mpp_reader=mpp_reader,
+                target_uid_prefill=target_raw or None,
+                status=500,
+            )
         return _render_page(mpp_reader=mpp_reader, target_uid_prefill=target_raw or None)
 
     @app.post("/wipe")
