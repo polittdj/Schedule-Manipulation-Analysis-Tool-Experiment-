@@ -93,6 +93,31 @@ MPP_READER_MPXJ: str = "mpxj"
 MPP_READER_COM: str = "com"
 _VALID_MPP_READERS: frozenset[str] = frozenset({MPP_READER_MPXJ, MPP_READER_COM})
 
+
+# ── Duration display ──────────────────────────────────────────────────────────
+# Every user-facing duration is rendered as "<n> day(s)" -- whole values appear
+# as integers ("1 day", "2 days"), fractional values as one decimal ("2.5 days"),
+# and the signed variant keeps an explicit sign for version-to-version deltas
+# ("+2 days" / "-1 day"). Registered as Jinja filters in :func:`create_app`.
+def format_days(value: float | int | None, *, signed: bool = False) -> str:
+    """Render a real-day count as ``"<n> day(s)"``; pluralised; integer when whole."""
+    if value is None:
+        return "n/a"
+    days = float(value)
+    abs_days = abs(days)
+    unit = "day" if abs_days == 1.0 else "days"
+    if abs_days == int(abs_days):
+        num = f"{int(days):+d}" if signed and days != 0 else f"{int(days)}"
+    else:
+        num = f"{days:+.1f}" if signed and days != 0 else f"{days:.1f}"
+    return f"{num} {unit}"
+
+
+def format_signed_days(value: float | int | None) -> str:
+    """Signed variant of :func:`format_days`: ``"+2 days"`` / ``"-1 day"`` / ``"0 days"``."""
+    return format_days(value, signed=True)
+
+
 # ── In-memory state ───────────────────────────────────────────────────────────
 # No schedule data is persisted to disk for the TEXT formats (XML/XER/JSON) -- they
 # stay in _STATE only. Native binary .mpp/.mpx uploads are the one exception: MPXJ
@@ -358,7 +383,7 @@ _TEMPLATE = """<!DOCTYPE html>
     <table>
       <thead>
         <tr><th>#</th><th>Schedule</th><th>Phase start</th>
-            <th>Phase end (status date)</th><th>Calendar days</th></tr>
+            <th>Phase end (status date)</th><th>Duration</th></tr>
       </thead>
       <tbody>
         {% for p in phases %}
@@ -367,7 +392,7 @@ _TEMPLATE = """<!DOCTYPE html>
           <td>{{ p.schedule_name }}</td>
           <td>{{ p.phase_start.date() }}</td>
           <td>{{ p.phase_end.date() }}</td>
-          <td>{{ "%.1f"|format(p.duration_days) }}</td>
+          <td>{{ p.duration_days | days }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -384,14 +409,14 @@ _TEMPLATE = """<!DOCTYPE html>
     <h3>Uploaded Versions</h3>
     <table>
       <thead><tr><th>File</th><th>Status date</th><th>Health</th>
-        <th>Finish (working min)</th></tr></thead>
+        <th>Finish</th></tr></thead>
       <tbody>
         {% for v in versions %}
         <tr>
           <td>{{ v.name }}</td>
           <td>{{ v.status_date }}</td>
           <td><span class="band band-{{ v.band }}">{{ v.band }}</span></td>
-          <td>{{ v.finish if v.finish is not none else "n/a" }}</td>
+          <td>{{ v.finish_days | days }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -438,10 +463,10 @@ _TEMPLATE = """<!DOCTYPE html>
     {% if trends.finish_days_net_change is not none %}
     <p>
       Project finish moved from
-      <strong>{{ "%.1f"|format(trends.finish_days_first) }}</strong> to
-      <strong>{{ "%.1f"|format(trends.finish_days_last) }}</strong> working days across
+      <strong>{{ trends.finish_days_first | days }}</strong> to
+      <strong>{{ trends.finish_days_last | days }}</strong> across
       {{ trends.n_versions }} versions
-      (<strong>{{ "%+.1f"|format(trends.finish_days_net_change) }}</strong> days &mdash;
+      (<strong>{{ trends.finish_days_net_change | signed_days }}</strong> &mdash;
       {% if trends.finish_days_net_change > 0 %}slipping
       {% elif trends.finish_days_net_change < 0 %}pulling in
       {% else %}no net change{% endif %}).
@@ -450,14 +475,14 @@ _TEMPLATE = """<!DOCTYPE html>
 
     <h4>Version trajectory</h4>
     <table>
-      <thead><tr><th>#</th><th>Status date</th><th>Finish (working days)</th>
+      <thead><tr><th>#</th><th>Status date</th><th>Finish</th>
         <th>Health</th><th>Band</th><th>Critical tasks</th></tr></thead>
       <tbody>
         {% for s in trends.snapshots %}
         <tr>
           <td>{{ s.index + 1 }}</td>
           <td>{{ s.status_date.date() if s.status_date else "n/a" }}</td>
-          <td>{{ "%.1f"|format(s.project_finish_days)
+          <td>{{ s.project_finish_days | days
                 if s.project_finish_days is not none else "n/a" }}</td>
           <td>{{ "%.1f"|format(s.health_score) ~ "%"
                 if s.health_score is not none else "n/a" }}</td>
@@ -476,15 +501,15 @@ _TEMPLATE = """<!DOCTYPE html>
     {% set eroders = trends.worst_eroders(8) %}
     {% if eroders %}
     <table>
-      <thead><tr><th>UniqueID</th><th>Earliest float (d)</th><th>Latest float (d)</th>
-        <th>Net change (d)</th><th>Trend</th></tr></thead>
+      <thead><tr><th>UniqueID</th><th>Earliest float</th><th>Latest float</th>
+        <th>Net change</th><th>Trend</th></tr></thead>
       <tbody>
         {% for t in eroders %}
         <tr>
           <td>{{ t.unique_id }}</td>
-          <td>{{ "%.1f"|format(t.earliest_float_days) }}</td>
-          <td>{{ "%.1f"|format(t.latest_float_days) }}</td>
-          <td>{{ "%+.1f"|format(t.net_change_days) }}</td>
+          <td>{{ t.earliest_float_days | days }}</td>
+          <td>{{ t.latest_float_days | days }}</td>
+          <td>{{ t.net_change_days | signed_days }}</td>
           <td>
             <span class="status-{{ 'FAIL'
                   if t.trend in ('CRITICAL', 'SEVERE_EROSION')
@@ -522,14 +547,14 @@ _TEMPLATE = """<!DOCTYPE html>
     </div>
     {% if d.top_changes %}
     <table>
-      <thead><tr><th>UniqueID</th><th>Finish shift (d)</th><th>Float &Delta; (d)</th>
+      <thead><tr><th>UniqueID</th><th>Finish shift</th><th>Float &Delta;</th>
         <th>Flag</th><th>Preds +</th><th>Preds &minus;</th></tr></thead>
       <tbody>
         {% for t in d.top_changes %}
         <tr>
           <td>{{ t.unique_id }}</td>
-          <td>{{ "%+.1f"|format(t.finish_shift_days) }}</td>
-          <td>{{ "%+.1f"|format(t.float_delta_days) }}</td>
+          <td>{{ t.finish_shift_days | signed_days }}</td>
+          <td>{{ t.float_delta_days | signed_days }}</td>
           <td>
             {% if t.became_critical %}<span class="status-FAIL">became critical</span>
             {% elif t.recovered %}<span class="status-PASS">recovered</span>
@@ -581,19 +606,10 @@ _TEMPLATE = """<!DOCTYPE html>
     </p>
 
     <div class="summary-grid" style="margin-top:12px;">
-      <span class="sg-label">Project Finish (working minutes):</span>
+      <span class="sg-label">Project Finish:</span>
       <span class="sg-value">
         {% if analysis.project_finish is not none %}
-          {{ analysis.project_finish }}
-        {% else %}
-          n/a
-        {% endif %}
-      </span>
-
-      <span class="sg-label">Project Finish (working days):</span>
-      <span class="sg-value">
-        {% if analysis.project_finish is not none %}
-          {{ "%.2f"|format(analysis.project_finish / 480.0) }}
+          {{ (analysis.project_finish / 480.0) | days }}
         {% else %}
           n/a
         {% endif %}
@@ -713,17 +729,17 @@ _TEMPLATE = """<!DOCTYPE html>
       (re-running the CPM each trial). Finish values are in working days.
     </p>
     <div class="summary-grid" style="margin-bottom:12px;">
-      <span class="sg-label">Deterministic finish (days):</span>
-      <span class="sg-value">{{ "%.1f"|format(sra.deterministic_days) }}</span>
-      <span class="sg-label">Mean finish (days):</span>
-      <span class="sg-value">{{ "%.1f"|format(sra.mean_days) }}</span>
+      <span class="sg-label">Deterministic finish:</span>
+      <span class="sg-value">{{ sra.deterministic_days | days }}</span>
+      <span class="sg-label">Mean finish:</span>
+      <span class="sg-value">{{ sra.mean_days | days }}</span>
     </div>
     <table>
-      <thead><tr><th>Percentile</th><th>Finish (working days)</th></tr></thead>
+      <thead><tr><th>Percentile</th><th>Finish</th></tr></thead>
       <tbody>
-        <tr><td>P50</td><td>{{ "%.1f"|format(sra.p50_days) }}</td></tr>
-        <tr><td>P80</td><td>{{ "%.1f"|format(sra.p80_days) }}</td></tr>
-        <tr><td>P95</td><td>{{ "%.1f"|format(sra.p95_days) }}</td></tr>
+        <tr><td>P50</td><td>{{ sra.p50_days | days }}</td></tr>
+        <tr><td>P80</td><td>{{ sra.p80_days | days }}</td></tr>
+        <tr><td>P95</td><td>{{ sra.p95_days | days }}</td></tr>
       </tbody>
     </table>
     {% if sra.top_criticality %}
@@ -918,7 +934,11 @@ def _store_results(parsed: list[tuple[str, Schedule]]) -> None:
             "name": name,
             "status_date": (sched.status_date.date().isoformat() if sched.status_date else "n/a"),
             "band": health_band(analysis).value,
-            "finish": analysis.project_finish,
+            "finish_days": (
+                analysis.project_finish / _MINUTES_PER_DAY
+                if analysis.project_finish is not None
+                else None
+            ),
         }
         for (name, sched), analysis in zip(parsed, analyses, strict=True)
     ]
@@ -1051,6 +1071,8 @@ def create_app() -> Flask:
     and is destroyed by POST /wipe.
     """
     app = Flask(__name__)
+    app.jinja_env.filters["days"] = format_days
+    app.jinja_env.filters["signed_days"] = format_signed_days
 
     @app.get("/")
     def index() -> ResponseReturnValue:

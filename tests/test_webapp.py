@@ -597,7 +597,9 @@ def test_analyze_multiple_files_shows_version_diff(client: object) -> None:
     body = resp.data.decode()
     assert "Version-to-Version Changes" in body
     assert "Finish shift" in body
-    assert "+2.0" in body  # task 2's finish moved 2 working days later (16h growth)
+    # Task 2's finish moved 2 working days later (16h growth); the dashboard now
+    # renders every duration as "<n> day(s)" with an explicit sign for deltas.
+    assert "+2 days" in body
     assert _STATE["diffs"]  # the diff was computed and stored
 
 
@@ -764,3 +766,78 @@ def test_report_docx_no_analysis_redirects(client: object) -> None:
     c: FlaskClient = client  # type: ignore[assignment]
     resp = c.get("/report.docx")
     assert resp.status_code in (301, 302, 303, 307, 308)
+
+
+# ── Day-formatting filter (all dashboard durations show as "<n> day(s)") ──────
+
+
+def test_format_days_unsigned_pluralisation_and_integer_display() -> None:
+    """Whole values lose the decimal; abs(value) == 1 is singular; else plural."""
+    from schedule_forensics.webapp.app import format_days
+
+    assert format_days(1) == "1 day"
+    assert format_days(1.0) == "1 day"
+    assert format_days(2) == "2 days"
+    assert format_days(2.0) == "2 days"
+    assert format_days(2.5) == "2.5 days"
+    assert format_days(0) == "0 days"
+    assert format_days(0.0) == "0 days"
+    assert format_days(-1) == "-1 day"
+    assert format_days(-2.5) == "-2.5 days"
+    assert format_days(None) == "n/a"
+
+
+def test_format_signed_days_keeps_explicit_sign_for_nonzero() -> None:
+    """Signed variant: ``+2 days`` / ``-1 day``; zero stays plain ``0 days``."""
+    from schedule_forensics.webapp.app import format_signed_days
+
+    assert format_signed_days(2) == "+2 days"
+    assert format_signed_days(2.5) == "+2.5 days"
+    assert format_signed_days(1) == "+1 day"
+    assert format_signed_days(-1) == "-1 day"
+    assert format_signed_days(-2.5) == "-2.5 days"
+    assert format_signed_days(0) == "0 days"
+    assert format_signed_days(None) == "n/a"
+
+
+def test_dashboard_renders_finish_in_days_not_minutes(client: object) -> None:
+    """The single-version dashboard shows the project finish as ``"<n> day(s)"``."""
+    from flask.testing import FlaskClient
+
+    from schedule_forensics.webapp.app import _store_results
+
+    ps = dt.datetime(2025, 1, 6, 8, 0)
+    t = (Task(unique_id=1, name="A", duration_minutes=480 * 5),)  # 5-day task
+    s = Schedule(name="P", project_start=ps, status_date=dt.datetime(2025, 1, 13), tasks=t)
+    _store_results([("only.xml", s)])
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    html = c.get("/").get_data(as_text=True)
+    # The new "Project Finish:" row replaces the old "(working minutes)/(working days)" pair.
+    assert "Project Finish:" in html
+    assert "Project Finish (working minutes)" not in html
+    assert "Project Finish (working days)" not in html
+    # The 5-day task at 8h/day produces a 5-day finish ("5 days", not "5" or "2400").
+    assert "5 days" in html
+
+
+def test_dashboard_phases_card_durations_are_day_labelled(client: object) -> None:
+    """The Schedule Phases card renders each phase duration as ``"<n> day(s)"``."""
+    from flask.testing import FlaskClient
+
+    from schedule_forensics.webapp.app import _store_results
+
+    ps = dt.datetime(2025, 1, 6, 8, 0)
+    t = (Task(unique_id=1, name="A", duration_minutes=480),)
+    # Two versions a clean 1 day and 10 days apart -- exercises singular and plural.
+    s1 = Schedule(name="P", project_start=ps, status_date=dt.datetime(2025, 1, 7, 8, 0), tasks=t)
+    s2 = Schedule(name="P", project_start=ps, status_date=dt.datetime(2025, 1, 17, 8, 0), tasks=t)
+    _store_results([("v01.mpp", s1), ("v02.mpp", s2)])
+
+    c: FlaskClient = client  # type: ignore[assignment]
+    html = c.get("/").get_data(as_text=True)
+    assert "Schedule Phases" in html
+    # Phase 1: earliest date (project_start) → 2025-01-07  = exactly 1 day → "1 day".
+    assert "1 day" in html
+    # Phase 2: 2025-01-07 → 2025-01-17 = exactly 10 days → "10 days".
+    assert "10 days" in html
