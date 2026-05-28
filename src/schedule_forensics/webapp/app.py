@@ -45,6 +45,7 @@ from schedule_forensics.importers.msp_xml import ImporterError as MspImporterErr
 from schedule_forensics.importers.msp_xml import parse_msp_xml_string
 from schedule_forensics.importers.xer import ImporterError as XerImporterError
 from schedule_forensics.importers.xer import parse_xer_string
+from schedule_forensics.phases import Phase, compute_phases
 from schedule_forensics.report_excel import CUI_NOTICE, build_excel_workbook
 from schedule_forensics.report_word import build_word_document
 from schedule_forensics.schemas import Schedule
@@ -79,6 +80,11 @@ _MINUTES_PER_DAY: float = 480.0
 # How many most-moved task deltas to surface per version pair in the diff card.
 _DIFF_TOP_CHANGES: int = 12
 
+# ── Upload cap ────────────────────────────────────────────────────────────────
+# Multi-file uploads are capped at this count per /analyze request. The engine
+# handles N arbitrary; this guards the UI from accidental mass uploads.
+MAX_UPLOADS: int = 20
+
 # ── Native .mpp/.mpx reader choice (user-selectable in the upload form) ───────
 # "mpxj" -> cross-platform MPXJ subprocess (default); "com" -> MS Project COM
 # automation (Windows-only). Only these two are valid; anything else falls back
@@ -106,6 +112,8 @@ _STATE: dict[str, Any] = {
     "sra": None,
     "sra_note": None,
     "diffs": (),
+    "phases": (),
+    "phases_note": None,
 }
 
 
@@ -120,6 +128,8 @@ def _clear_state() -> None:
     _STATE["sra"] = None
     _STATE["sra_note"] = None
     _STATE["diffs"] = ()
+    _STATE["phases"] = ()
+    _STATE["phases_note"] = None
 
 
 # ── Inline HTML template (no external assets — LAW 1) ─────────────────────────
@@ -296,7 +306,8 @@ _TEMPLATE = """<!DOCTYPE html>
       <div style="margin-bottom:14px;">
         <label for="schedule_files">Schedule file(s) &mdash; native MS Project
           <strong>.mpp</strong>, .mpx, Primavera .xer, or MS Project XML
-          (select multiple status-dated versions for a comparative CEI view):</label>
+          (select up to 20 status-dated versions; the dashboard orders them by status
+          date and shows the resulting time phases plus the comparative CEI view):</label>
         <input type="file" id="schedule_files" name="schedule_files"
                accept=".mpp,.mpx,.xer,.xml" multiple>
       </div>
@@ -332,6 +343,38 @@ _TEMPLATE = """<!DOCTYPE html>
       </div>
     </form>
   </div>
+
+  {% if phases or phases_note %}
+  <div class="card">
+    <h3>Schedule Phases{% if phases %} &mdash; {{ phases|length }} phase(s){% endif %}</h3>
+    {% if phases_note %}
+      <div class="error-box">{{ phases_note }}</div>
+    {% endif %}
+    {% if phases %}
+    <p style="color:var(--text-dim);margin-bottom:8px;">
+      Phase 1 starts at the earliest date in the first schedule; each subsequent
+      phase runs from the prior status date to the current status date.
+    </p>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Schedule</th><th>Phase start</th>
+            <th>Phase end (status date)</th><th>Calendar days</th></tr>
+      </thead>
+      <tbody>
+        {% for p in phases %}
+        <tr>
+          <td>{{ p.index }}</td>
+          <td>{{ p.schedule_name }}</td>
+          <td>{{ p.phase_start.date() }}</td>
+          <td>{{ p.phase_end.date() }}</td>
+          <td>{{ "%.1f"|format(p.duration_days) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if versions and versions|length > 1 %}
   <hr class="divider">
@@ -841,6 +884,25 @@ def _compute_sra(schedule: Schedule) -> tuple[SRAResult | None, str | None]:
         return None, None
 
 
+def _compute_phases_view(
+    parsed: list[tuple[str, Schedule]],
+) -> tuple[tuple[Phase, ...], str | None]:
+    """Return the time phases for the uploaded series, or ``((), note)`` on error.
+
+    Pairs each schedule with its uploaded filename so the dashboard shows the
+    file the operator actually selected (rather than the project's internal
+    ``Schedule.name``, which is often a default like 'Project1'). Missing
+    ``status_date`` on any version surfaces as a note (LAW 2 -- fail closed).
+    """
+    if not parsed:
+        return (), None
+    relabelled = [s.model_copy(update={"name": name}) for name, s in parsed]
+    try:
+        return compute_phases(relabelled), None
+    except VersionMatchError as exc:
+        return (), f"Phases unavailable: {exc}."
+
+
 def _store_results(parsed: list[tuple[str, Schedule]]) -> None:
     """Populate _STATE from the parsed (filename, Schedule) pairs."""
     schedules = [sched for _, sched in parsed]
@@ -865,6 +927,9 @@ def _store_results(parsed: list[tuple[str, Schedule]]) -> None:
     _STATE["cei_note"] = cei_note
     _STATE["trends"] = _compute_trends(schedules)
     _STATE["diffs"] = _compute_diffs(schedules)
+    phases, phases_note = _compute_phases_view(parsed)
+    _STATE["phases"] = phases
+    _STATE["phases_note"] = phases_note
 
 
 def _sra_view(sra: SRAResult | None) -> dict[str, Any] | None:
@@ -972,6 +1037,8 @@ def _render_page(
         sra=_sra_view(_STATE.get("sra")),
         sra_note=_STATE.get("sra_note"),
         diffs=_diffs_view(_STATE.get("diffs") or ()),
+        phases=_STATE.get("phases") or (),
+        phases_note=_STATE.get("phases_note"),
     )
     return (html, status) if status != 200 else html
 
@@ -1003,6 +1070,14 @@ def create_app() -> Flask:
             for f in [*request.files.getlist("schedule_files"), *request.files.getlist("xml_file")]
             if f and f.filename
         ]
+        if len(uploads) > MAX_UPLOADS:
+            return _render_page(
+                error=(
+                    f"Up to {MAX_UPLOADS} schedule files are supported per analysis; "
+                    f"got {len(uploads)}."
+                ),
+                status=400,
+            )
         json_text = (request.form.get("json_text") or "").strip()
         # Native .mpp/.mpx reader choice; unknown values fall back to MPXJ (fail safe).
         mpp_reader = (request.form.get("mpp_reader") or MPP_READER_MPXJ).strip().lower()
